@@ -103,8 +103,6 @@ class LabeledCombinedDataset(Dataset):
         shoemark_path: Path | str,
         *,
         mode: _dataset_mode,
-        shoeprint_transform,
-        shoemark_transform,
     ):
         shoeprint_path = Path(shoeprint_path).expanduser()
         shoemark_path = Path(shoemark_path).expanduser()
@@ -124,8 +122,6 @@ class LabeledCombinedDataset(Dataset):
 
         self.shoemark_classes = shoemark_classes
 
-        self.shoeprint_transform = shoeprint_transform
-        self.shoemark_transform = shoemark_transform
         self.mode = mode
 
     def __len__(self):
@@ -136,21 +132,21 @@ class LabeledCombinedDataset(Dataset):
         shoeprint_class = int(shoeprint.stem.split("_")[0])
         shoeprint_image = Image.open(shoeprint).convert("RGB")
 
-        shoeprint = self.shoeprint_transform(shoeprint_image)
+        shoeprint_image = F.to_tensor(shoeprint_image)
 
         # For validation/testing we want to test all shoeprints for a shoemark
         if self.mode in {"val", "aug_val", "test"}:
             shoemark_files = self.shoemark_classes[shoeprint_class]
-            shoemarks = tuple(
-                self.shoemark_transform(Image.open(f).convert("RGB")) for f in shoemark_files
+            shoemark_images = tuple(
+                F.to_tensor(Image.open(f).convert("RGB")) for f in shoemark_files
             )
 
-            return shoeprint_class, (shoeprint, shoemarks)
+            return shoeprint_class, (shoeprint_image, shoemark_images)
 
         shoemark_file = random.choice(self.shoemark_classes[shoeprint_class])
-        shoemark = self.shoemark_transform(Image.open(shoemark_file).convert("RGB"))
+        shoemark_image = F.to_tensor(Image.open(shoemark_file).convert("RGB"))
 
-        return shoeprint, shoemark
+        return shoeprint, shoemark_image
 
     # Used for validation/test datasets where we don't work in batches
     def __iter__(self):
