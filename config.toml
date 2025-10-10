@@ -22,6 +22,7 @@ defrost = 0 # When to start layer unfreezing
 permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all 
 refreeze = false # Refreeze previous layer after unfreezing one before
 
+
 [training.shoemark_augmentation]
 max_translation = [64, 32]
 max_rotation = 45

@@ -14,7 +14,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-_dataset_mode = Literal["train", "test", "val"]
+_dataset_mode = Literal["train", "test", "val", "aug_val"]
 
 
 def calculate_stats(loader: torch.utils.data.DataLoader):
@@ -62,8 +62,9 @@ class IndividualDataset(Dataset):
 
 def export_augmented(dataset: IndividualDataset, gpu_transform, save_dir: Path):
     """Export augmented images to a directory."""
+    save_dir = Path(save_dir)
     save_dir.mkdir(exist_ok=True)
-    for image, file in dataset:
+    for image, file in tqdm(dataset):
         transformed = gpu_transform(image)
         torchvision.utils.save_image(transformed, save_dir / file.name)
 
@@ -88,9 +89,7 @@ def gpu_transform(
 
     if offset:
         transform_list.append(
-            RandomOffsetTransormation(
-                offset_translation, offset_max_rotation, offset_scale_diff
-            )  # pyright: ignore [reportArgumentType]
+            RandomOffsetTransormation(offset_translation, offset_max_rotation, offset_scale_diff)  # pyright: ignore [reportArgumentType]
         )
 
     if flip:
@@ -153,9 +152,7 @@ class LabeledCombinedDataset(Dataset):
             shoeprint_path.rglob("*.png")
         )
 
-        shoemark_files = list(shoemark_path.rglob("*.jpg")) + list(
-            shoemark_path.rglob("*.png")
-        )
+        shoemark_files = list(shoemark_path.rglob("*.jpg")) + list(shoemark_path.rglob("*.png"))
 
         shoemark_classes = defaultdict(list)
 
@@ -180,11 +177,10 @@ class LabeledCombinedDataset(Dataset):
         shoeprint = self.shoeprint_transform(shoeprint_image)
 
         # For validation/testing we want to test all shoeprints for a shoemark
-        if self.mode in {"val", "test"}:
+        if self.mode in {"val", "aug_val", "test"}:
             shoemark_files = self.shoemark_classes[shoeprint_class]
             shoemarks = tuple(
-                self.shoemark_transform(Image.open(f).convert("RGB"))
-                for f in shoemark_files
+                self.shoemark_transform(Image.open(f).convert("RGB")) for f in shoemark_files
             )
 
             return shoeprint_class, (shoeprint, shoemarks)

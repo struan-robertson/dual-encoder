@@ -6,14 +6,16 @@ import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import torch
+from torchvision import transforms
+from tqdm import tqdm
+
 from src.config import load_config
 from src.datasets import LabeledCombinedDataset, gpu_transform
 from src.model import SharedSiamese
-from torchvision import transforms
-from tqdm import tqdm
 
 # * Config
 
@@ -70,12 +72,8 @@ shoemark_model = SharedSiamese(
     permafrost=config["training"]["pre_training"]["permafrost"],
 ).to(device)
 
-shoeprint_optimizer = torch.optim.AdamW(
-    shoeprint_model.parameters(), lr=0.001, weight_decay=1e-4
-)
-shoemark_optimizer = torch.optim.AdamW(
-    shoemark_model.parameters(), lr=0.001, weight_decay=1e-4
-)
+shoeprint_optimizer = torch.optim.AdamW(shoeprint_model.parameters(), lr=0.001, weight_decay=1e-4)
+shoemark_optimizer = torch.optim.AdamW(shoemark_model.parameters(), lr=0.001, weight_decay=1e-4)
 
 shoeprint_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     shoeprint_optimizer, T_max=config["training"]["epochs"]
@@ -102,6 +100,7 @@ shoeprint_augmented_transform = gpu_transform(
     offset_max_rotation=config["training"]["shoeprint_augmentation"]["max_rotation"],
     offset_scale_diff=config["training"]["shoeprint_augmentation"]["max_scale"],
     flip=config["training"]["shoeprint_augmentation"]["flip"],
+    normalise=False,  # FIXME
 )
 
 shoeprint_normal_transform = gpu_transform(
@@ -121,6 +120,7 @@ shoemark_augmented_transform = gpu_transform(
     offset_max_rotation=config["training"]["shoemark_augmentation"]["max_rotation"],
     offset_scale_diff=config["training"]["shoemark_augmentation"]["max_scale"],
     flip=config["training"]["shoemark_augmentation"]["flip"],
+    normalise=False,  # FIXME
 )
 
 shoemark_normal_transform = gpu_transform(
@@ -158,7 +158,7 @@ loader = torch.utils.data.DataLoader(
 val_dataset = LabeledCombinedDataset(
     config["data"]["shoeprint_data_dir"],
     config["data"]["shoemark_data_dir"],
-    mode="val",
+    mode="aug_val",
     shoeprint_transform=transforms.ToTensor(),
     shoemark_transform=transforms.ToTensor(),
 )
@@ -282,7 +282,7 @@ def training_loop():
                 epoch % config["training"]["val_iter"] == 0
                 or epoch == config["training"]["epochs"] - 1
             ) and epoch != 0:
-                val = evaluate(p=5, dataset=val_dataset)
+                val = validate(p=5, dataset=val_dataset)
                 line = f"Epoch {epoch} p5 validation: = {val}\n"
                 _write_line(line, pbar, checkpoint_dir)
 
@@ -311,11 +311,11 @@ def training_loop():
             pbar.update()
 
 
-# * Evaluation
+# * Validation
 
 
 @torch.no_grad()
-def evaluate(
+def validate(
     p: int = 5,
     *,
     dataset: LabeledCombinedDataset,
@@ -327,8 +327,9 @@ def evaluate(
     shoemark_model.eval()
 
     if checkpoint:
-        checkpoint = torch.load(checkpoint)
-        model.load_state_dict(checkpoint["model_state_dict"])  # pyright: ignore
+        checkpoint = torch.load(checkpoint, map_location=device)
+        shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"]) # pyright: ignore
+        shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"]) # pyright: ignore
 
     shoeprint_embeddings = defaultdict(lambda: torch.zeros(1))
     shoemark_embeddings = defaultdict(lambda: torch.zeros(1))
@@ -377,9 +378,7 @@ def evaluate(
             ranks.append(rank)
             if move_failures and rank > k:
                 shutil.copy(
-                    config["data"]["shoemark_data_dir"]
-                    / "val"
-                    / f"{shoe_id}_{shoemark_id}.png",
+                    config["data"]["shoemark_data_dir"] / "val" / f"{shoe_id}_{shoemark_id}.png",
                     "failed_val/",
                 )
 
@@ -387,6 +386,24 @@ def evaluate(
 
     return np.mean(ranks <= k)
 
+def validate_all_checkpoints(p:int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path):
+    checkpoint_dir = Path(checkpoint_dir )
+    checkpoints = list(checkpoint_dir.glob("*.tar"))
+    scores = defaultdict(float)
+
+    for checkpoint in tqdm(checkpoints):
+        epoch = int(checkpoint.stem.split('_')[1])
+        score = validate(p, dataset=dataset, checkpoint=checkpoint)
+        scores[epoch] = cast(float, score)
+
+    with (checkpoint_dir / "siamese_test.log").open("a") as f:
+        for epoch, score in sorted(scores.items()):
+            f.write(f"Epoch {epoch} p{p} validation: = {score}\n")
+        
+        
+
+    
+    
 
 # * Entry Point
 
