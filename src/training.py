@@ -10,12 +10,17 @@ from typing import cast
 
 import numpy as np
 import torch
-from torchvision import transforms
+from one_to_many_gan import GeneratorHandler, load_gan_config
 from tqdm import tqdm
 
-from src.config import load_config
-from src.datasets import LabeledCombinedDataset, gpu_transform
-from src.model import SharedSiamese
+from siamese.config import load_config
+from siamese.datasets import LabeledCombinedDataset, gpu_transform
+from siamese.model import SharedSiamese
+from siamese.streaming import (
+    StreamingDataset,
+    StreamingTransforms,
+    create_shoemarks,
+)
 
 # * Config
 
@@ -26,6 +31,7 @@ config = (
     else load_config(sys.argv[1])
 )
 
+gan_config = load_gan_config(config["training"]["gan_config"])
 
 # * Seeding
 
@@ -38,9 +44,10 @@ def seed_worker(worker_id):
     np.random.default_rng(worker_seed)
     random.seed(worker_seed)
 
-    # Passed to dataloaders
-    dataloader_g = torch.Generator()
-    dataloader_g.manual_seed(config["training"]["seed"])
+
+# Passed to dataloaders
+dataloader_g = torch.Generator()
+dataloader_g.manual_seed(config["training"]["seed"])
 
 
 torch.manual_seed(config["training"]["seed"])
@@ -91,16 +98,11 @@ criterion = torch.nn.TripletMarginLoss(
 
 # * Data
 
-shoeprint_augmented_transform = gpu_transform(
-    config["data"]["image_size"],
-    mean=config["data"]["shoeprint_dataset_mean"],
-    std=config["data"]["shoeprint_dataset_std"],
-    offset=True,
-    offset_translation=config["training"]["shoeprint_augmentation"]["max_translation"],
-    offset_max_rotation=config["training"]["shoeprint_augmentation"]["max_rotation"],
-    offset_scale_diff=config["training"]["shoeprint_augmentation"]["max_scale"],
-    flip=config["training"]["shoeprint_augmentation"]["flip"],
-    normalise=False,  # FIXME
+# ** Transforms
+
+# TODO specify in config
+streaming_transform = StreamingTransforms(
+    fill=0.0, min_ratio=0.25, size=config["data"]["image_size"]
 )
 
 shoeprint_normal_transform = gpu_transform(
@@ -111,18 +113,6 @@ shoeprint_normal_transform = gpu_transform(
     flip=False,
 )
 
-shoemark_augmented_transform = gpu_transform(
-    config["data"]["image_size"],
-    mean=config["data"]["shoemark_dataset_mean"],
-    std=config["data"]["shoemark_dataset_std"],
-    offset=True,
-    offset_translation=config["training"]["shoemark_augmentation"]["max_translation"],
-    offset_max_rotation=config["training"]["shoemark_augmentation"]["max_rotation"],
-    offset_scale_diff=config["training"]["shoemark_augmentation"]["max_scale"],
-    flip=config["training"]["shoemark_augmentation"]["flip"],
-    normalise=False,  # FIXME
-)
-
 shoemark_normal_transform = gpu_transform(
     config["data"]["image_size"],
     mean=config["data"]["shoemark_dataset_mean"],
@@ -131,27 +121,32 @@ shoemark_normal_transform = gpu_transform(
     flip=False,
 )
 
-
 # ** Training
 
-dataset = LabeledCombinedDataset(
+# TODO start at imagenet normalisations and then update progressively using streaming data
+
+dataset = StreamingDataset(
     config["data"]["shoeprint_data_dir"],
     config["data"]["shoemark_data_dir"],
-    mode="train",
-    shoeprint_transform=transforms.ToTensor(),
-    shoemark_transform=transforms.ToTensor(),
+    config["data"]["streaming"]["floor_image_data_dir"],
+    config["data"]["image_size"],
+    config["data"]["streaming"]["min_floor_roi_height"],
+    config["data"]["streaming"]["synthetic_ratio"],
 )
 
 loader = torch.utils.data.DataLoader(
     dataset,
     batch_size=config["hyperparameters"]["batch_size"],
     shuffle=True,
-    num_workers=4,
+    num_workers=8,
     pin_memory=True,
     drop_last=False,
     worker_init_fn=seed_worker,
     persistent_workers=True,
+    generator=dataloader_g,
 )
+
+generator_handler = GeneratorHandler(gan_config, device)
 
 # ** Validation
 
@@ -159,27 +154,20 @@ val_dataset = LabeledCombinedDataset(
     config["data"]["shoeprint_data_dir"],
     config["data"]["shoemark_data_dir"],
     mode="aug_val",
-    shoeprint_transform=transforms.ToTensor(),
-    shoemark_transform=transforms.ToTensor(),
 )
 
 # ** Testing
 
-# TODO if this works then clean up adding transforms here
 wvu_dataset = LabeledCombinedDataset(
     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",
     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoemarks/",
     mode="test",
-    shoeprint_transform=transforms.ToTensor(),
-    shoemark_transform=transforms.ToTensor(),
 )
 
 fid_dataset = LabeledCombinedDataset(
     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoeprints/",
     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoemarks/",
     mode="test",
-    shoeprint_transform=transforms.ToTensor(),
-    shoemark_transform=transforms.ToTensor(),
 )
 
 
@@ -204,13 +192,30 @@ def training_loop():
             pbar.set_description(f"Epoch: {epoch}")
             losses = 0
 
-            for shoeprint_batch, shoemark_batch in loader:
+            for (
+                shoeprint_batch,
+                floor_image_batch,
+                shoemark_batch,
+                shoemark_type_mask_batch,
+            ) in loader:
+                # All shoeprints will be used
                 shoeprints = shoeprint_batch.to(device)
+                floor_images = floor_image_batch.to(device)
                 shoemarks = shoemark_batch.to(device)
+                shoemark_type_mask = shoemark_type_mask_batch.to(device)
 
-                # Transform on GPU
-                shoeprints = shoeprint_augmented_transform(shoeprints)
-                shoemarks = shoemark_augmented_transform(shoemarks)
+                shoemarks = create_shoemarks(
+                    shoeprints,
+                    floor_images,
+                    shoemarks,
+                    shoemark_type_mask,
+                    generator_handler,
+                    difficulty=1.0,  # TODO Calculate difficulty dynamically
+                )
+
+                shoeprints = streaming_transform.universal_transforms(shoeprints)
+
+                # TODO running metrics for normalisation
 
                 # Get embeddings
                 shoeprint_embeddings = shoeprint_model(shoeprints)  # [b, d]
@@ -328,8 +333,8 @@ def validate(
 
     if checkpoint:
         checkpoint = torch.load(checkpoint, map_location=device)
-        shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"]) # pyright: ignore
-        shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"]) # pyright: ignore
+        shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"])  # pyright: ignore
+        shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"])  # pyright: ignore
 
     shoeprint_embeddings = defaultdict(lambda: torch.zeros(1))
     shoemark_embeddings = defaultdict(lambda: torch.zeros(1))
@@ -386,24 +391,21 @@ def validate(
 
     return np.mean(ranks <= k)
 
-def validate_all_checkpoints(p:int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path):
-    checkpoint_dir = Path(checkpoint_dir )
+
+def validate_all_checkpoints(p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path):
+    checkpoint_dir = Path(checkpoint_dir)
     checkpoints = list(checkpoint_dir.glob("*.tar"))
     scores = defaultdict(float)
 
     for checkpoint in tqdm(checkpoints):
-        epoch = int(checkpoint.stem.split('_')[1])
+        epoch = int(checkpoint.stem.split("_")[1])
         score = validate(p, dataset=dataset, checkpoint=checkpoint)
         scores[epoch] = cast(float, score)
 
     with (checkpoint_dir / "siamese_test.log").open("a") as f:
         for epoch, score in sorted(scores.items()):
             f.write(f"Epoch {epoch} p{p} validation: = {score}\n")
-        
-        
 
-    
-    
 
 # * Entry Point
 

@@ -1,9 +1,8 @@
 """Define typed config options."""
 
+import tomllib
 from pathlib import Path
 from typing import TypedDict
-
-import tomllib
 
 
 class _Hyperparameters(TypedDict):
@@ -40,6 +39,13 @@ class _Training(TypedDict):
     pre_training: _PreTraining
     shoemark_augmentation: _Augmentation
     shoeprint_augmentation: _Augmentation
+    gan_config: Path
+
+
+class _Streaming(TypedDict):
+    floor_image_data_dir: Path
+    min_floor_roi_height: int
+    synthetic_ratio: float
 
 
 class _Data(TypedDict):
@@ -49,6 +55,7 @@ class _Data(TypedDict):
     shoemark_data_dir: Path
     shoemark_dataset_mean: tuple[float, float, float]
     shoemark_dataset_std: tuple[float, float, float]
+    streaming: _Streaming
     wvu_data_dir: Path
     fid_data_dir: Path
     image_size: tuple[int, int]
@@ -73,5 +80,9 @@ def load_config(path: Path | str):
     config["data"]["shoemark_data_dir"] = Path(config["data"]["shoemark_data_dir"])
     config["data"]["wvu_data_dir"] = Path(config["data"]["wvu_data_dir"])
     config["data"]["fid_data_dir"] = Path(config["data"]["fid_data_dir"])
+    config["training"]["gan_config"] = Path(config["training"]["gan_config"])
+    config["data"]["streaming"]["floor_image_data_dir"] = Path(
+        config["data"]["streaming"]["floor_image_data_dir"]
+    )
 
     return config

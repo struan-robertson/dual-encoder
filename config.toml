@@ -8,10 +8,11 @@ triplet_swapping = true
 [training]
 seed = 4242
 epochs = 10_000
-gpu_number = 1
+gpu_number = 0
 print_iter = 100
 val_iter = 500
-name = "different_backbone_4_margin"
+name = "default"
+gan_config = "../one_to_many_gan/implementation/config.toml"
 
 [training.pre_training]
 pre_trained = true
@@ -36,17 +37,18 @@ max_scale = 0.125
 flip = true
 
 [data]
-shoeprint_data_dir = "/home/struan/Datasets/Siamese/Shoeprints"
+shoeprint_data_dir = "./data/Streaming/Shoeprints/"
 shoeprint_dataset_mean = [0.8864, 0.8864, 0.8864] 
 shoeprint_dataset_std = [0.2424, 0.2424, 0.2424]
 
-shoemark_data_dir = "/home/struan/Datasets/Siamese/Shoemarks"
+shoemark_data_dir = "./data/Streaming/Shoemarks/"
 shoemark_dataset_mean = [0.6919, 0.6443, 0.5891]
 shoemark_dataset_std = [0.2416, 0.2508, 0.2796]
 
+floor_image_data_dir = "../one_to_many_gan/flooring/"
 
-wvu_data_dir = "/home/struan/Datasets/Siamese/Testing/WVU2019/"
-fid_data_dir = "/home/struan/Datasets/Siamese/Testing/FID-300/Shoeprints/"
+wvu_data_dir = "./data/Testing/WVU2019/"
+fid_data_dir = "./data/Testing/FID-300/Shoeprints/"
 
 image_size = [512, 256]
 

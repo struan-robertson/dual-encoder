@@ -74,7 +74,7 @@ extend-ignore = [
     "ERA001", # Commenting out code isn't always bad
     "PT", # I don't use pytest
     "PGH003", # Sometimes there are a lot of errors to ignore
-    # Better handled by ruff linter https://docs.astral.sh/ruff/formatter/#format-suppression
+    # Better handled by pyright https://docs.astral.sh/ruff/formatter/#format-suppression
     "W191",
     "E111",
     "E114",
@@ -91,4 +91,5 @@ extend-ignore = [
     "D213",
     "D203",
     "I001",
+    "RUF059"
 ]
