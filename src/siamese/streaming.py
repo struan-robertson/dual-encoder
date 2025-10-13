@@ -44,9 +44,8 @@ class StreamingDataset(Dataset):
         min_floor_roi_height: int,
         synthetic_ratio: float,
     ):
-        shoeprint_path = (
-            Path(shoeprint_path).expanduser() / "train"
-        )  # Streaming is only used for training
+        #  / "train" # Streaming is only used for training
+        shoeprint_path = Path(shoeprint_path).expanduser()
         real_shoemark_path = Path(real_shoemark_path).expanduser()
         floor_path = Path(floor_path).expanduser()
 
@@ -117,6 +116,7 @@ class StreamingDataset(Dataset):
         max_roi_height = min(h, w // 2)
 
         if max_roi_height < self.min_floor_roi_height:
+            breakpoint()
             raise ValueError
 
         # Randomly select height
@@ -192,6 +192,7 @@ def create_shoemarks(
     shoemark_type_mask: torch.Tensor,
     generator_handler: GeneratorHandler,
     difficulty: float,
+    streaming_transform: "StreamingTransforms",
 ):
     """Handle the creation of shoemarks for a batch of shoeprints."""
     indices = torch.arange(shoemarks.size(0))
@@ -227,6 +228,13 @@ def create_shoemarks(
     # Determine which need background substitution
     include_background = no_background_shoemarks.std(dim=1) > 0.08
 
+    # Randomly apply pre blend transforms
+    pre_blend_transformed = torch.rand(no_background_shoemarks.shape[0]) > 0.5
+    pre_blend_indices = set(combined_indices[pre_blend_transformed].tolist())
+    no_background_shoemarks[pre_blend_transformed] = streaming_transform.pre_blend_transforms(
+        no_background_shoemarks[pre_blend_transformed]
+    )
+
     synth_background_shoemarks = no_background_shoemarks[include_background] * floor_images
 
     # Build list of (index, shoemark) tuples
@@ -248,7 +256,14 @@ def create_shoemarks(
 
     # Sort by original index and stack
     result_pairs.sort(key=lambda x: x[0])
-    return torch.stack([shoemark for _, shoemark in result_pairs])
+
+    # We need to know which shoemarks have been pre-blend transformed as pre/post blending
+    # transformations are mutually exclusive
+    sorted_pre_blended = torch.tensor(
+        [idx in pre_blend_indices for idx, _ in result_pairs], dtype=torch.bool
+    )
+
+    return torch.stack([shoemark for _, shoemark in result_pairs]), sorted_pre_blended
 
 
 class StreamingTransforms:
@@ -317,3 +332,47 @@ class StreamingTransforms:
                 transforms.RandomApply([random_resize_crop], p=0.5),
             ]
         )
+
+
+class AdaptiveNormalisation:
+    """Use Exponential Moving Average (EMA) for normalising a stream of data."""
+
+    def __init__(
+        self, initial_mean: torch.Tensor, initial_std: torch.Tensor, momentum: float = 0.99
+    ):
+        self.mean = initial_mean.clone()
+        self.std = initial_std.clone()
+        self.momentum = momentum
+        self.n_samples = 0
+
+    def __call__(self, batch: torch.Tensor, *, update: bool = True):
+        # Normalise with current statistics
+        normalised = (batch - self.mean[None, :, None, None]) / self.std[None, :, None, None]
+
+        if update:
+            batch_mean = batch.mean(dim=[0, 2, 3])
+            batch_std = batch.std(dim=[0, 2, 3])
+
+            # Start with a high momentum, decrease over time
+            # Improves early training stability
+            effective_momentum = min(self.momentum, self.n_samples / (self.n_samples + 1))
+
+            self.mean = effective_momentum * self.mean + (1 - effective_momentum) * batch_mean
+            self.std = effective_momentum * self.std + (1 - effective_momentum) * batch_std
+            self.n_samples += batch.size(0)
+
+        return normalised
+
+    def state_dict(self):
+        return {
+            "mean": self.mean,
+            "std": self.std,
+            "momentum": self.momentum,
+            "n_sampels": self.n_samples,
+        }
+
+    def load_state_dict(self, state_dict: dict):
+        self.mean = state_dict["mean"]
+        self.std = state_dict["std"]
+        self.momentum = state_dict["momentum"]
+        self.n_samples = state_dict["n_samples"]

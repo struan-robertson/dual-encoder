@@ -17,6 +17,7 @@ from siamese.config import load_config
 from siamese.datasets import LabeledCombinedDataset, gpu_transform
 from siamese.model import SharedSiamese
 from siamese.streaming import (
+    AdaptiveNormalisation,
     StreamingDataset,
     StreamingTransforms,
     create_shoemarks,
@@ -26,7 +27,7 @@ from siamese.streaming import (
 
 
 config = (
-    load_config("config.toml")
+    load_config("../config.toml")
     if len(sys.argv) < 2 or sys.argv[1] == "" or sys.argv[1] == "-i"
     else load_config(sys.argv[1])
 )
@@ -105,6 +106,10 @@ streaming_transform = StreamingTransforms(
     fill=0.0, min_ratio=0.25, size=config["data"]["image_size"]
 )
 
+imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
+imagenet_std = torch.tensor([0.229, 0.224, 0.225])
+adaptive_normalisation = AdaptiveNormalisation(imagenet_mean, imagenet_std, momentum=0.9)
+
 shoeprint_normal_transform = gpu_transform(
     config["data"]["image_size"],
     mean=config["data"]["shoeprint_dataset_mean"],
@@ -120,6 +125,7 @@ shoemark_normal_transform = gpu_transform(
     offset=False,
     flip=False,
 )
+
 
 # ** Training
 
@@ -150,11 +156,11 @@ generator_handler = GeneratorHandler(gan_config, device)
 
 # ** Validation
 
-val_dataset = LabeledCombinedDataset(
-    config["data"]["shoeprint_data_dir"],
-    config["data"]["shoemark_data_dir"],
-    mode="aug_val",
-)
+# val_dataset = LabeledCombinedDataset(
+#     config["data"]["shoeprint_data_dir"],
+#     config["data"]["shoemark_data_dir"],
+#     mode="aug_val",
+# )
 
 # ** Testing
 
@@ -184,7 +190,7 @@ def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
 # Violating d(anchor, positive) < d(anchor, negative) < d(anchor, positive) + margin
 def training_loop():
     """Run training loop for siamese model."""
-    checkpoint_dir = Path("checkpoints") / config["training"]["name"]
+    checkpoint_dir = Path("../checkpoints") / config["training"]["name"]
     checkpoint_dir.mkdir()
 
     with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
@@ -204,22 +210,36 @@ def training_loop():
                 shoemarks = shoemark_batch.to(device)
                 shoemark_type_mask = shoemark_type_mask_batch.to(device)
 
-                shoemarks = create_shoemarks(
+                shoemarks, pre_blended_mask = create_shoemarks(
                     shoeprints,
                     floor_images,
                     shoemarks,
                     shoemark_type_mask,
                     generator_handler,
                     difficulty=1.0,  # TODO Calculate difficulty dynamically
+                    streaming_transform=streaming_transform,
                 )
 
                 shoeprints = streaming_transform.universal_transforms(shoeprints)
+                shoemarks = streaming_transform.universal_transforms(shoemarks)
 
-                # TODO running metrics for normalisation
+                # Apply post blend transforms to shoemarks that did not feature pre blend transforms
+                shoemarks[~pre_blended_mask] = streaming_transform.post_blend_transform(
+                    shoemarks[~pre_blended_mask]
+                )
+
+                # Apply photometric transforms to all shoemarks
+                shoemarks = streaming_transform.photometric_transforms(shoemarks)
+
+                # Use EMA for normalisations
+                shoeprints = adaptive_normalisation(shoeprints, update=True)
+                shoemarks = adaptive_normalisation(shoemarks, update=True)
 
                 # Get embeddings
                 shoeprint_embeddings = shoeprint_model(shoeprints)  # [b, d]
                 shoemark_embeddings = shoemark_model(shoemarks)  # [b, d]
+
+                breakpoint()
 
                 # Pairwise distances matrix [N, N]
                 dists = torch.cdist(
