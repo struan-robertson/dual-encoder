@@ -196,7 +196,6 @@ class RandomCropAndPad:
         return F.pad(scaled, padding=(pad_left, pad_top, pad_right, pad_bottom), fill=self.fill)  # pyright: ignore [reportArgumentType]
 
 
-@profile
 def create_shoemarks(
     shoeprints: torch.Tensor,
     floor_images: torch.Tensor,

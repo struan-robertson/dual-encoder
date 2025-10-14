@@ -10,6 +10,7 @@ from typing import cast
 
 import numpy as np
 import torch
+import torch._dynamo.config as dynamo_config
 from one_to_many_gan import GeneratorHandler, load_gan_config
 from tqdm import tqdm
 
@@ -62,6 +63,9 @@ if torch.cuda.is_available():
 
 # * PyTorch
 
+torch.set_float32_matmul_precision("high")
+
+dynamo_config.cache_size_limit = config["hyperparameters"]["batch_size"]
 
 device = torch.device(
     f"cuda:{config['training']['gpu_number']}" if torch.cuda.is_available() else "cpu"
