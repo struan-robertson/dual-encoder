@@ -18,6 +18,7 @@ from siamese.datasets import LabeledCombinedDataset, gpu_transform
 from siamese.model import SharedSiamese
 from siamese.streaming import (
     AdaptiveNormalisation,
+    DifficultyScheduler,
     StreamingDataset,
     StreamingTransforms,
     create_shoemarks,
@@ -104,6 +105,15 @@ criterion = torch.nn.TripletMarginLoss(
 # TODO specify in config
 streaming_transform = StreamingTransforms(
     fill=0.0, min_ratio=0.25, size=config["data"]["image_size"]
+)
+
+# TODO specify in config
+difficulty_scheduler = DifficultyScheduler(
+    margin=config["hyperparameters"]["margin"],
+    beta=0.99,
+    initial_difficulty=0.2,
+    min_difficulty=0.1,
+    max_difficulty=1.0,
 )
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
@@ -207,12 +217,12 @@ def training_loop():
                 shoemark_type_mask_batch,
             ) in loader:
                 # All shoeprints will be used
-                # breakpoint()
                 shoeprints = shoeprint_batch.to(device)
                 floor_images = floor_image_batch.to(device)
                 shoemarks = shoemark_batch.to(device)
                 shoemark_type_mask = shoemark_type_mask_batch.to(device)
 
+                current_difficulty = difficulty_scheduler.get_difficulty()
                 shoemarks, pre_blended_mask = create_shoemarks(
                     shoeprints,
                     floor_images,
@@ -286,6 +296,11 @@ def training_loop():
                 # Extract negative embeddings
                 negatives = shoemark_embeddings[neg_idxs]
 
+                # Negative distances
+                neg_dists = dists[torch.arange(current_batch_size), neg_idxs]
+
+                difficulty_scheduler.update(pos_dists, neg_dists)
+
                 # Calculate triplet loss
                 loss = criterion(shoeprint_embeddings, shoemark_embeddings, negatives)
 
@@ -301,7 +316,10 @@ def training_loop():
                 losses += loss.item()
 
             if epoch % config["training"]["print_iter"] == 0 and epoch != 0:
-                line = f"Epoch {epoch} loss: {(losses / config['training']['print_iter'])}\n"
+                line = (
+                    f"Epoch {epoch} loss: {(losses / config['training']['print_iter'])}"
+                    f"difficulty: {difficulty_scheduler.get_difficulty()}\n"
+                )
                 _write_line(line, pbar, checkpoint_dir)
                 losses = 0
 
