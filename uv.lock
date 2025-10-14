@@ -803,6 +803,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "line-profiler" },
     { name = "pyright" },
 ]
 
@@ -822,7 +823,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pyright", specifier = ">=1.1.406" }]
+dev = [
+    { name = "line-profiler", specifier = ">=5.0.0" },
+    { name = "pyright", specifier = ">=1.1.406" },
+]
 
 [[package]]
 name = "six"

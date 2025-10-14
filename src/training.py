@@ -108,7 +108,9 @@ streaming_transform = StreamingTransforms(
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
 imagenet_std = torch.tensor([0.229, 0.224, 0.225])
-adaptive_normalisation = AdaptiveNormalisation(imagenet_mean, imagenet_std, momentum=0.9)
+adaptive_normalisation = AdaptiveNormalisation(
+    imagenet_mean, imagenet_std, device=device, momentum=0.9
+)
 
 shoeprint_normal_transform = gpu_transform(
     config["data"]["image_size"],
@@ -144,11 +146,11 @@ loader = torch.utils.data.DataLoader(
     dataset,
     batch_size=config["hyperparameters"]["batch_size"],
     shuffle=True,
-    num_workers=8,
+    num_workers=0,
     pin_memory=True,
     drop_last=False,
     worker_init_fn=seed_worker,
-    persistent_workers=True,
+    # persistent_workers=True,
     generator=dataloader_g,
 )
 
@@ -191,7 +193,7 @@ def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
 def training_loop():
     """Run training loop for siamese model."""
     checkpoint_dir = Path("../checkpoints") / config["training"]["name"]
-    checkpoint_dir.mkdir()
+    checkpoint_dir.mkdir(exist_ok=True)  # TODO remove this after testing
 
     with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
         for epoch in range(config["training"]["epochs"]):
@@ -205,6 +207,7 @@ def training_loop():
                 shoemark_type_mask_batch,
             ) in loader:
                 # All shoeprints will be used
+                # breakpoint()
                 shoeprints = shoeprint_batch.to(device)
                 floor_images = floor_image_batch.to(device)
                 shoemarks = shoemark_batch.to(device)
@@ -218,6 +221,7 @@ def training_loop():
                     generator_handler,
                     difficulty=1.0,  # TODO Calculate difficulty dynamically
                     streaming_transform=streaming_transform,
+                    device=device,
                 )
 
                 shoeprints = streaming_transform.universal_transforms(shoeprints)
@@ -238,8 +242,6 @@ def training_loop():
                 # Get embeddings
                 shoeprint_embeddings = shoeprint_model(shoeprints)  # [b, d]
                 shoemark_embeddings = shoemark_model(shoemarks)  # [b, d]
-
-                breakpoint()
 
                 # Pairwise distances matrix [N, N]
                 dists = torch.cdist(
