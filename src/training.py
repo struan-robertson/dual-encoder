@@ -221,6 +221,7 @@ def training_loop():
         for epoch in range(config["training"]["epochs"]):
             pbar.set_description(f"Epoch: {epoch}")
             losses = 0
+            batch_sizes = 0
 
             for (
                 shoeprint_batch,
@@ -329,6 +330,8 @@ def training_loop():
                 # Extract negative embeddings
                 negatives = shoemark_embeddings[neg_idxs]
 
+                batch_sizes += len(negatives)
+
                 # Calculate triplet loss
                 loss = criterion(shoeprint_embeddings, shoemark_embeddings, negatives)
 
@@ -348,10 +351,12 @@ def training_loop():
             if epoch % config["training"]["print_iter"] == 0 and epoch != 0:
                 line = (
                     f"Epoch {epoch} loss: {(losses / config['training']['print_iter'])}"
-                    f" difficulty: {difficulty_scheduler.get_difficulty()}\n"
+                    f" difficulty: {difficulty_scheduler.get_difficulty()}"
+                    f" avg_mined: {batch_sizes / config['training']['print_iter']}\n"
                 )
                 _write_line(line, pbar, checkpoint_dir)
                 losses = 0
+                batch_sizes = 0
 
             if (
                 epoch % config["training"]["val_iter"] == 0
