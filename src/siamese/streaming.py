@@ -56,9 +56,19 @@ class StreamingDataset(Dataset):
             for shoeprint_path in self.shoeprint_files
         ]
 
+        def rotate_image(image: torch.Tensor):
+            _0 = image
+            _90 = torch.rot90(image, 1, dims=[-2, -1])
+            _180 = torch.rot90(image, 2, dims=[-2, -1])
+            _260 = torch.rot90(image, 3, dims=[-2, -1])
+            return _0, _90, _180, _260
+
         floor_files = find_all_images(floor_path)
-        self.floor_tensors = [
+        floor_tensors = [
             F.to_tensor(Image.open(floor_path).convert("RGB")) for floor_path in floor_files
+        ]
+        self.floor_tensors = [
+            rotated for tensor in floor_tensors for rotated in rotate_image(tensor)
         ]
 
         self.shoemark_tensors = defaultdict(list)
@@ -115,11 +125,6 @@ class StreamingDataset(Dataset):
 
     def _get_floor_image(self):
         floor_image = random.choice(self.floor_tensors)
-
-        # Randomly rotate by 0, 90, 180 or 270 degrees
-        # TODO store rotated images in RAM
-        # k = random.randint(0, 3)
-        # floor_image = torch.rot90(floor_image, k=k, dims=[-2, -1])
 
         # Get tensor dimensions
         _, h, w = floor_image.shape
