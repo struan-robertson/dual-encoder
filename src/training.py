@@ -225,9 +225,10 @@ def training_loop():
                 shoemark_type_mask_batch,
             ) in loader:
                 # All shoeprints will be used
+                # TODO tidy this into a seperate function
                 with torch.no_grad():
                     shoeprints = shoeprint_batch.to(gan_device)
-                    shoeprints_gen = shoeprint_batch.to(gan_device)
+                    shoeprints_gen = shoeprint_gen_batch.to(gan_device)
                     floor_images = floor_image_batch.to(gan_device)
                     shoemarks = shoemark_batch.to(gan_device)
                     shoemark_type_mask = shoemark_type_mask_batch.to(gan_device)
