@@ -408,36 +408,23 @@ class AdaptiveNormalisation:
 
 
 class DifficultyScheduler:
-    """EMA-based difficulty scheduler."""
+    """Curriculum difficulty scheduling."""
 
     def __init__(
         self,
-        margin: float,
-        beta: float = 0.99,
         initial_difficulty: float = 0.1,
-        min_difficulty=0.1,
         max_difficulty=1.0,
+        peak_steps: int = 1000,
     ):
-        self.margin = margin
-        self.beta = beta
         self.difficulty = initial_difficulty
-        self.min_difficulty = min_difficulty
         self.max_difficulty = max_difficulty
+        self.step_amount = max_difficulty / peak_steps
 
-    def update(self, pos_dists: torch.Tensor, neg_dists: torch.Tensor):
+    def step(self):
         # Calculate how well sperated the pairs are
         # Higher violation_score means network is struggling
-        violations = torch.clamp(pos_dists - neg_dists + self.margin, min=0)
-        violation_score = violations.mean().item()
-
-        # Normalise score by margin to get [0, 1] range
-        normalised_score = min(violation_score / self.margin, 1.0)
-
-        target_difficulty = 1.0 - normalised_score
-
-        difficulty = self.beta * self.difficulty + (1 - self.beta) * target_difficulty
-        # Clamp to valid range
-        self.difficulty = max(self.min_difficulty, min(self.max_difficulty, difficulty))
+        difficulty = self.difficulty + self.step_amount
+        return min(self.max_difficulty, difficulty)
 
     def get_difficulty(self):
         return self.difficulty

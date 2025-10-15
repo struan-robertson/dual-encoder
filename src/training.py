@@ -11,7 +11,6 @@ from typing import cast
 import numpy as np
 import torch
 import torch._dynamo.config as dynamo_config
-import torchvision
 from one_to_many_gan import GeneratorHandler, load_gan_config
 from tqdm import tqdm
 
@@ -113,11 +112,9 @@ streaming_transform = StreamingTransforms(fill=0.0, min_edge=128, size=config["d
 
 # TODO specify in config
 difficulty_scheduler = DifficultyScheduler(
-    margin=config["hyperparameters"]["margin"],
-    beta=0.99,
     initial_difficulty=0.2,
-    min_difficulty=0.1,
     max_difficulty=1.0,
+    peak_steps=1000,
 )
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
@@ -209,8 +206,6 @@ def training_loop():
     checkpoint_dir = Path("../checkpoints") / config["training"]["name"]
     checkpoint_dir.mkdir(exist_ok=True)  # TODO remove this after testing
 
-    shoeprint_count = 0
-    shoemark_count = 0
     with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
         for epoch in range(config["training"]["epochs"]):
             pbar.set_description(f"Epoch: {epoch}")
@@ -228,14 +223,13 @@ def training_loop():
                 shoemarks = shoemark_batch.to(device)
                 shoemark_type_mask = shoemark_type_mask_batch.to(device)
 
-                current_difficulty = difficulty_scheduler.get_difficulty()
                 shoemarks, pre_blended_mask = create_shoemarks(
                     shoeprints,
                     floor_images,
                     shoemarks,
                     shoemark_type_mask,
                     generator_handler,
-                    difficulty=1.0,  # TODO Calculate difficulty dynamically
+                    difficulty=difficulty_scheduler.get_difficulty(),
                     streaming_transform=streaming_transform,
                     device=device,
                 )
@@ -253,23 +247,6 @@ def training_loop():
 
                 # Apply photometric transforms to all shoemarks
                 shoemarks = streaming_transform.photometric_transforms(shoemarks)
-
-                # just for testing
-                shoeprint_save_dir = "../testing/shoeprints"
-                shoemark_save_dir = "../testing/shoemarks"
-
-                for shoeprint in shoeprints:
-                    torchvision.utils.save_image(
-                        shoeprint, f"{shoeprint_save_dir}/{shoeprint_count}.png"
-                    )
-                    shoeprint_count += 1
-
-                for shoemark in shoemarks:
-                    torchvision.utils.save_image(
-                        shoemark, f"{shoemark_save_dir}/{shoemark_count}.png"
-                    )
-                    shoemark_count += 1
-                continue
 
                 # Use EMA for normalisations
                 shoeprints = adaptive_normalisation(shoeprints, update=True)
@@ -325,8 +302,6 @@ def training_loop():
                 # Negative distances
                 neg_dists = dists[torch.arange(current_batch_size), neg_idxs]
 
-                difficulty_scheduler.update(pos_dists, neg_dists)
-
                 # Calculate triplet loss
                 loss = criterion(shoeprint_embeddings, shoemark_embeddings, negatives)
 
@@ -338,6 +313,8 @@ def training_loop():
 
                 shoeprint_scheduler.step()
                 shoemark_scheduler.step()
+
+                difficulty_scheduler.step()
 
                 losses += loss.item()
 
@@ -353,9 +330,9 @@ def training_loop():
                 epoch % config["training"]["val_iter"] == 0
                 or epoch == config["training"]["epochs"] - 1
             ) and epoch != 0:
-                val = validate(p=5, dataset=val_dataset)
-                line = f"Epoch {epoch} p5 validation: = {val}\n"
-                _write_line(line, pbar, checkpoint_dir)
+                # val = validate(p=5, dataset=val_dataset)
+                # line = f"Epoch {epoch} p5 validation: = {val}\n"
+                # _write_line(line, pbar, checkpoint_dir)
 
                 torch.save(
                     {
