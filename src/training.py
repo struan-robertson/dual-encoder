@@ -1,6 +1,5 @@
 """Train a Siamese model using images generated on the fly."""
 
-import gc
 import math
 import random
 import shutil
@@ -280,8 +279,6 @@ def training_loop():
                     del shoemark_type_mask
                     del pre_blended_mask
                     del background_mask
-                    # gc.collect()
-                    # torch.cuda.empty_cache()
 
                 # Get embeddings
                 shoeprint_embeddings = shoeprint_model(shoeprints)  # [b, d]
