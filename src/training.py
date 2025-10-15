@@ -63,6 +63,11 @@ if torch.cuda.is_available():
 
 # * PyTorch
 
+torch._dynamo.config.cache_size_limit = config["hyperparameters"]["batch_size"]
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 device = torch.device(
     f"cuda:{config['training']['gpu_number']}" if torch.cuda.is_available() else "cpu"
 )
