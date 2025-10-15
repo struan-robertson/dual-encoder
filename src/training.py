@@ -21,7 +21,7 @@ from siamese.streaming import (
     ShoemarkImpressionType,
     StreamingDataset,
     StreamingTransforms,
-    create_shoemarks,
+    shoemark_pipeline,
 )
 from tqdm import tqdm
 
@@ -233,7 +233,7 @@ def training_loop():
                     shoemarks = shoemark_batch.to(gan_device)
                     shoemark_type_mask = shoemark_type_mask_batch.to(gan_device)
 
-                    shoemarks, pre_blended_mask = create_shoemarks(
+                    shoemarks, pre_blended_mask = shoemark_pipeline(
                         shoeprints_gen,
                         floor_images,
                         shoemarks,
