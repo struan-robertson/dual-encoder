@@ -269,12 +269,10 @@ def training_loop():
 
                     # Release GPU memory
                     del shoeprint_gen_batch
-
-                    # del floor_images
-                    # del shoemark_type_mask
-
-                    # del pre_blended_mask
-                    # del background_mask
+                    del floor_images
+                    del shoemark_type_mask
+                    del pre_blended_mask
+                    del background_mask
                     # gc.collect()
                     # torch.cuda.empty_cache()
 
