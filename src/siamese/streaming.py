@@ -11,10 +11,9 @@ import torchvision.transforms.v2 as transforms
 import torchvision.transforms.v2.functional as F
 from one_to_many_gan import GeneratorHandler
 from PIL import Image
+from siamese.datasets import find_all_images
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
-
-from siamese.datasets import find_all_images
 
 
 class ShoemarkImpressionType(IntEnum):
@@ -50,12 +49,6 @@ class StreamingDataset(Dataset):
         real_shoemark_path = Path(real_shoemark_path).expanduser()
         floor_path = Path(floor_path).expanduser()
 
-        self.shoeprint_files = find_all_images(shoeprint_path)
-        self.shoeprint_tensors = [
-            F.to_tensor(Image.open(shoeprint_path).convert("RGB"))
-            for shoeprint_path in self.shoeprint_files
-        ]
-
         def rotate_image(image: torch.Tensor):
             _0 = image
             _90 = torch.rot90(image, 1, dims=[-2, -1])
@@ -65,24 +58,39 @@ class StreamingDataset(Dataset):
 
         floor_files = find_all_images(floor_path)
         floor_tensors = [
-            F.to_tensor(Image.open(floor_path).convert("RGB")) for floor_path in floor_files
+            F.to_tensor(Image.open(floor_path).convert("RGB"))
+            for floor_path in floor_files
         ]
         self.floor_tensors = [
             rotated for tensor in floor_tensors for rotated in rotate_image(tensor)
         ]
 
+        self.shoeprint_tensors = defaultdict(list)
+        shoeprint_files = find_all_images(shoeprint_path)
+        for f in shoeprint_files:
+            class_id = int(f.stem.split("_")[0])
+            self.shoeprint_tensors[class_id].append(
+                F.to_tensor(Image.open(f).convert("RGB"))
+            )
+        self.shoeprint_classes = list(self.shoeprint_tensors.keys())
+
         self.shoemark_tensors = defaultdict(list)
 
-        def allocate_shoemarks(files: list[Path], impression_type: ShoemarkImpressionType):
+        def allocate_shoemarks(
+            files: list[Path], impression_type: ShoemarkImpressionType
+        ):
             for f in files:
                 class_id = int(f.stem.split("_")[0])
                 self.shoemark_tensors[class_id].append(
-                    ShoemarkImpression(F.to_tensor(Image.open(f).convert("RGB")), impression_type)
+                    ShoemarkImpression(
+                        F.to_tensor(Image.open(f).convert("RGB")), impression_type
+                    )
                 )
 
         shoemark_no_back_files = find_all_images(real_shoemark_path / "no_back")
-        allocate_shoemarks(shoemark_no_back_files, ShoemarkImpressionType.SHOEMARK_NO_BACK)
-
+        allocate_shoemarks(
+            shoemark_no_back_files, ShoemarkImpressionType.SHOEMARK_NO_BACK
+        )
         shoemark_back_files = find_all_images(real_shoemark_path / "back")
         allocate_shoemarks(shoemark_back_files, ShoemarkImpressionType.SHOEMARK_BACK)
 
@@ -94,16 +102,17 @@ class StreamingDataset(Dataset):
         return len(self.shoeprint_tensors)
 
     def __getitem__(self, idx):
-        # TODO use defaultdict to store shoeprint tensors with IDs
-        shoeprint_file = self.shoeprint_files[idx]
-        shoeprint_id = int(shoeprint_file.stem.split("_")[0])
-        shoeprint_image = self.shoeprint_tensors[idx]
+        shoeprint_class = self.shoeprint_classes[idx]
+
+        shoeprint_image = random.choice(self.shoeprint_tensors[idx])
+        # Its not an issue if they might be the same, and some shoeprints have only one image
+        shoeprint_gen_image = random.choice(self.shoeprint_tensors[idx])
 
         # For shoeprints that have a shoemark, we don't always want to use the real shoemark
         use_synthetic = random.random() > self.synthetic_ratio
 
-        if not use_synthetic and shoeprint_id in self.shoemark_tensors:
-            shoemark = random.choice(self.shoemark_tensors[shoeprint_id])
+        if not use_synthetic and shoeprint_class in self.shoemark_tensors:
+            shoemark = random.choice(self.shoemark_tensors[shoeprint_class])
             shoemark_image = shoemark.data
             shoemark_image_type = shoemark.impression_type
         else:
@@ -121,7 +130,13 @@ class StreamingDataset(Dataset):
         ):
             raise ValueError
 
-        return shoeprint_image, floor_image, shoemark_image, torch.tensor(shoemark_image_type)
+        return (
+            shoeprint_image,
+            shoeprint_gen_image,
+            floor_image,
+            shoemark_image,
+            torch.tensor(shoemark_image_type),
+        )
 
     def _get_floor_image(self):
         floor_image = random.choice(self.floor_tensors)
@@ -159,7 +174,9 @@ class StreamingDataset(Dataset):
 class RandomCropAndPad:
     """Randomly crop a batch of tensors and then scale and pad back to original shape."""
 
-    def __init__(self, fill: float = 0.0, min_edge: int = 64, size: tuple[int, int] = (512, 256)):
+    def __init__(
+        self, fill: float = 0.0, min_edge: int = 64, size: tuple[int, int] = (512, 256)
+    ):
         self.random_crop = transforms.RandomCrop(size)
         self.fill = fill
         self.min_edge = min_edge
@@ -193,7 +210,11 @@ class RandomCropAndPad:
         pad_bottom = pad_h // 2
         pad_right = pad_w // 2
 
-        return F.pad(scaled, padding=(pad_left, pad_top, pad_right, pad_bottom), fill=self.fill)  # pyright: ignore [reportArgumentType]
+        return F.pad(
+            scaled,
+            padding=(pad_left, pad_top, pad_right, pad_bottom),  # pyright: ignore [reportArgumentType]
+            fill=self.fill,
+        )
 
 
 def create_shoemarks(
@@ -227,13 +248,17 @@ def create_shoemarks(
 
     # Generate shoemarks using shoeprints
     generated_shoemarks = generator_handler.generate(
-        F.rgb_to_grayscale(no_shoemark_shoeprints), difficulty=difficulty, normalised=False
+        F.rgb_to_grayscale(no_shoemark_shoeprints),
+        difficulty=difficulty,
+        normalised=False,
     )
     b, _, h, w = generated_shoemarks.shape
     generated_shoemarks = generated_shoemarks.expand(b, 3, h, w)
 
     # Floor images for shoemarks requiring them
-    floor_images = floor_images[shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK]
+    floor_images = floor_images[
+        shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK
+    ]
 
     # Combine no_background and generated shoemarks
     no_background_shoemarks = torch.cat([no_background_shoemarks, generated_shoemarks])
@@ -247,36 +272,47 @@ def create_shoemarks(
     pre_blend_mask = torch.zeros(shoemarks.size(0), dtype=torch.bool, device=device)
     pre_blend_mask[combined_indices[pre_blend_transformed]] = True
 
-    no_background_shoemarks[pre_blend_transformed] = streaming_transform.pre_blend_transforms(
-        no_background_shoemarks[pre_blend_transformed]
+    no_background_shoemarks[pre_blend_transformed] = (
+        streaming_transform.pre_blend_transforms(
+            no_background_shoemarks[pre_blend_transformed]
+        )
     )
 
     # Convert some shoemarks to blue (enhanced blood)
-    no_background_shoemarks[include_background] = streaming_transform.shoemark_blue_shift(
-        no_background_shoemarks[include_background]
+    no_background_shoemarks[include_background] = (
+        streaming_transform.shoemark_blue_shift(
+            no_background_shoemarks[include_background]
+        )
     )
 
     # Don't affine cropped shoemarks
-    no_background_shoemarks[~pre_blend_transformed] = streaming_transform.shoemark_affine(
-        no_background_shoemarks[~pre_blend_transformed]
+    no_background_shoemarks[~pre_blend_transformed] = (
+        streaming_transform.shoemark_affine(
+            no_background_shoemarks[~pre_blend_transformed]
+        )
     )
 
     synth_background_shoemarks = (
-        no_background_shoemarks[include_background] * floor_images[: include_background.sum()]
+        no_background_shoemarks[include_background]
+        * floor_images[: include_background.sum()]
     )
 
     # Build list of (index, shoemark) tuples
     result_pairs = []
 
     # Add background shoemarks
-    for idx, shoemark in zip(background_indices.tolist(), background_shoemarks, strict=True):
+    for idx, shoemark in zip(
+        background_indices.tolist(), background_shoemarks, strict=True
+    ):
         result_pairs.append((idx, shoemark))
 
     # Add synthetic background shoemarks
     synth_bg_iter = iter(synth_background_shoemarks)
     no_bg_iter = iter(no_background_shoemarks[~include_background])
 
-    for idx, needs_bg in zip(combined_indices.tolist(), include_background.tolist(), strict=True):
+    for idx, needs_bg in zip(
+        combined_indices.tolist(), include_background.tolist(), strict=True
+    ):
         if needs_bg:
             result_pairs.append((idx, next(synth_bg_iter)))
         else:
@@ -304,7 +340,8 @@ class StreamingTransforms:
         size: tuple[int, int] = (512, 256),
     ):
         self.post_blend_transform = transforms.RandomApply(
-            transforms=[RandomCropAndPad(fill=fill, min_edge=min_edge, size=size)], p=0.5
+            transforms=[RandomCropAndPad(fill=fill, min_edge=min_edge, size=size)],
+            p=0.5,
         )
 
         # TODO this may be too aggressive for shoeprints
@@ -340,7 +377,8 @@ class StreamingTransforms:
             return shoemark
 
         self.shoemark_blue_shift = transforms.RandomApply(
-            [shoemark_blue_shift, transforms.Lambda(lambda x: torch.clamp(x, 0, 1))], p=1 / 3
+            [shoemark_blue_shift, transforms.Lambda(lambda x: torch.clamp(x, 0, 1))],
+            p=1 / 3,
         )
 
         # TODO specify in config
@@ -352,7 +390,10 @@ class StreamingTransforms:
                         transforms.RandomAdjustSharpness(sharpness_factor=2),
                     ]
                 ),
-                transforms.RandomApply([transforms.ColorJitter(brightness=0.4, hue=0.2)], p=0.5),
+                transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
+                transforms.RandomApply(
+                    [transforms.ColorJitter(brightness=0.4, hue=0.2)], p=0.5
+                ),
                 transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
             ]
         )
@@ -381,7 +422,9 @@ class AdaptiveNormalisation:
 
     def __call__(self, batch: torch.Tensor, *, update: bool = True):
         # Normalise with current statistics
-        normalised = (batch - self.mean[None, :, None, None]) / self.std[None, :, None, None]
+        normalised = (batch - self.mean[None, :, None, None]) / self.std[
+            None, :, None, None
+        ]
 
         if update:
             batch_mean = batch.mean(dim=[0, 2, 3])
@@ -389,10 +432,16 @@ class AdaptiveNormalisation:
 
             # Start with a high momentum, decrease over time
             # Improves early training stability
-            effective_momentum = min(self.momentum, self.n_samples / (self.n_samples + 1))
+            effective_momentum = min(
+                self.momentum, self.n_samples / (self.n_samples + 1)
+            )
 
-            self.mean = effective_momentum * self.mean + (1 - effective_momentum) * batch_mean
-            self.std = effective_momentum * self.std + (1 - effective_momentum) * batch_std
+            self.mean = (
+                effective_momentum * self.mean + (1 - effective_momentum) * batch_mean
+            )
+            self.std = (
+                effective_momentum * self.std + (1 - effective_momentum) * batch_std
+            )
             self.n_samples += batch.size(0)
 
         return normalised
@@ -429,7 +478,7 @@ class DifficultyScheduler:
         # Calculate how well sperated the pairs are
         # Higher violation_score means network is struggling
         difficulty = self.difficulty + self.step_amount
-        return min(self.max_difficulty, difficulty)
+        self.difficulty = min(self.max_difficulty, difficulty)
 
     def get_difficulty(self):
         return self.difficulty

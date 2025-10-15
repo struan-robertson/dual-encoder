@@ -1,5 +1,6 @@
 """Train a Siamese model using images generated on the fly."""
 
+import gc
 import math
 import random
 import shutil
@@ -10,10 +11,7 @@ from typing import cast
 
 import numpy as np
 import torch
-import torch._dynamo.config as dynamo_config
 from one_to_many_gan import GeneratorHandler, load_gan_config
-from tqdm import tqdm
-
 from siamese.config import load_config
 from siamese.datasets import LabeledCombinedDataset, gpu_transform
 from siamese.model import SharedSiamese
@@ -25,6 +23,7 @@ from siamese.streaming import (
     StreamingTransforms,
     create_shoemarks,
 )
+from tqdm import tqdm
 
 # * Config
 
@@ -64,12 +63,13 @@ if torch.cuda.is_available():
 
 # * PyTorch
 
-torch.set_float32_matmul_precision("high")
-
-dynamo_config.cache_size_limit = config["hyperparameters"]["batch_size"]
-
 device = torch.device(
     f"cuda:{config['training']['gpu_number']}" if torch.cuda.is_available() else "cpu"
+)
+gan_device = torch.device(
+    f"cuda:{gan_config['training']['gpu_number']}"
+    if torch.cuda.is_available()
+    else "cpu"
 )
 
 shoeprint_model = SharedSiamese(
@@ -86,8 +86,12 @@ shoemark_model = SharedSiamese(
     permafrost=config["training"]["pre_training"]["permafrost"],
 ).to(device)
 
-shoeprint_optimizer = torch.optim.AdamW(shoeprint_model.parameters(), lr=0.001, weight_decay=1e-4)
-shoemark_optimizer = torch.optim.AdamW(shoemark_model.parameters(), lr=0.001, weight_decay=1e-4)
+shoeprint_optimizer = torch.optim.AdamW(
+    shoeprint_model.parameters(), lr=0.001, weight_decay=1e-4
+)
+shoemark_optimizer = torch.optim.AdamW(
+    shoemark_model.parameters(), lr=0.001, weight_decay=1e-4
+)
 
 shoeprint_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     shoeprint_optimizer, T_max=config["training"]["epochs"]
@@ -108,19 +112,21 @@ criterion = torch.nn.TripletMarginLoss(
 # ** Transforms
 
 # TODO specify in config
-streaming_transform = StreamingTransforms(fill=0.0, min_edge=128, size=config["data"]["image_size"])
+streaming_transform = StreamingTransforms(
+    fill=0.0, min_edge=128, size=config["data"]["image_size"]
+)
 
 # TODO specify in config
 difficulty_scheduler = DifficultyScheduler(
     initial_difficulty=0.2,
     max_difficulty=1.0,
-    peak_steps=1000,
+    peak_steps=500,
 )
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
 imagenet_std = torch.tensor([0.229, 0.224, 0.225])
 adaptive_normalisation = AdaptiveNormalisation(
-    imagenet_mean, imagenet_std, device=device, momentum=0.9
+    imagenet_mean, imagenet_std, device=gan_device, momentum=0.9
 )
 
 shoeprint_normal_transform = gpu_transform(
@@ -165,7 +171,7 @@ loader = torch.utils.data.DataLoader(
     generator=dataloader_g,
 )
 
-generator_handler = GeneratorHandler(gan_config, device)
+generator_handler = GeneratorHandler(gan_config, gan_device)
 
 # ** Validation
 
@@ -177,17 +183,17 @@ generator_handler = GeneratorHandler(gan_config, device)
 
 # ** Testing
 
-wvu_dataset = LabeledCombinedDataset(
-    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",
-    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoemarks/",
-    mode="test",
-)
+# wvu_dataset = LabeledCombinedDataset(
+#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",
+#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoemarks/",
+#     mode="test",
+# )
 
-fid_dataset = LabeledCombinedDataset(
-    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoeprints/",
-    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoemarks/",
-    mode="test",
-)
+# fid_dataset = LabeledCombinedDataset(
+#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoeprints/",
+#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoemarks/",
+#     mode="test",
+# )
 
 
 # * Main loop
@@ -213,44 +219,64 @@ def training_loop():
 
             for (
                 shoeprint_batch,
+                shoeprint_gen_batch,
                 floor_image_batch,
                 shoemark_batch,
                 shoemark_type_mask_batch,
             ) in loader:
                 # All shoeprints will be used
-                shoeprints = shoeprint_batch.to(device)
-                floor_images = floor_image_batch.to(device)
-                shoemarks = shoemark_batch.to(device)
-                shoemark_type_mask = shoemark_type_mask_batch.to(device)
+                with torch.no_grad():
+                    shoeprints = shoeprint_batch.to(gan_device)
+                    shoeprints_gen = shoeprint_batch.to(gan_device)
+                    floor_images = floor_image_batch.to(gan_device)
+                    shoemarks = shoemark_batch.to(gan_device)
+                    shoemark_type_mask = shoemark_type_mask_batch.to(gan_device)
 
-                shoemarks, pre_blended_mask = create_shoemarks(
-                    shoeprints,
-                    floor_images,
-                    shoemarks,
-                    shoemark_type_mask,
-                    generator_handler,
-                    difficulty=difficulty_scheduler.get_difficulty(),
-                    streaming_transform=streaming_transform,
-                    device=device,
-                )
-
-                shoeprints = streaming_transform.shoeprint_affine(shoeprints)
-
-                # Apply post blend transforms to shoemarks that did not feature pre blend transforms
-                # Also leave background shoemarks be
-                background_mask = shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
-                shoemarks[~pre_blended_mask & ~background_mask] = (
-                    streaming_transform.post_blend_transform(
-                        shoemarks[~pre_blended_mask & ~background_mask]
+                    shoemarks, pre_blended_mask = create_shoemarks(
+                        shoeprints_gen,
+                        floor_images,
+                        shoemarks,
+                        shoemark_type_mask,
+                        generator_handler,
+                        difficulty=difficulty_scheduler.get_difficulty(),
+                        streaming_transform=streaming_transform,
+                        device=gan_device,
                     )
-                )
 
-                # Apply photometric transforms to all shoemarks
-                shoemarks = streaming_transform.photometric_transforms(shoemarks)
+                    shoeprints = streaming_transform.shoeprint_affine(shoeprints)
 
-                # Use EMA for normalisations
-                shoeprints = adaptive_normalisation(shoeprints, update=True)
-                shoemarks = adaptive_normalisation(shoemarks, update=True)
+                    # Apply post blend transforms to shoemarks that did not feature pre blend
+                    # transforms or pre-existing background
+                    background_mask = (
+                        shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
+                    )
+                    shoemarks[~pre_blended_mask & ~background_mask] = (
+                        streaming_transform.post_blend_transform(
+                            shoemarks[~pre_blended_mask & ~background_mask]
+                        )
+                    )
+
+                    # Apply photometric transforms to all shoemarks
+                    shoemarks = streaming_transform.photometric_transforms(shoemarks)
+
+                    # Use EMA for normalisations
+                    shoeprints = adaptive_normalisation(shoeprints, update=True)
+                    shoemarks = adaptive_normalisation(shoemarks, update=True)
+
+                    # Transfer to other GPU
+                    shoeprints = shoeprints.to(device)
+                    shoemarks = shoemarks.to(device)
+
+                    # Release GPU memory
+                    del shoeprint_gen_batch
+
+                    # del floor_images
+                    # del shoemark_type_mask
+
+                    # del pre_blended_mask
+                    # del background_mask
+                    # gc.collect()
+                    # torch.cuda.empty_cache()
 
                 # Get embeddings
                 shoeprint_embeddings = shoeprint_model(shoeprints)  # [b, d]
@@ -299,9 +325,6 @@ def training_loop():
                 # Extract negative embeddings
                 negatives = shoemark_embeddings[neg_idxs]
 
-                # Negative distances
-                neg_dists = dists[torch.arange(current_batch_size), neg_idxs]
-
                 # Calculate triplet loss
                 loss = criterion(shoeprint_embeddings, shoemark_embeddings, negatives)
 
@@ -314,9 +337,9 @@ def training_loop():
                 shoeprint_scheduler.step()
                 shoemark_scheduler.step()
 
-                difficulty_scheduler.step()
-
                 losses += loss.item()
+
+            difficulty_scheduler.step()
 
             if epoch % config["training"]["print_iter"] == 0 and epoch != 0:
                 line = (
@@ -427,7 +450,9 @@ def validate(
             ranks.append(rank)
             if move_failures and rank > k:
                 shutil.copy(
-                    config["data"]["shoemark_data_dir"] / "val" / f"{shoe_id}_{shoemark_id}.png",
+                    config["data"]["shoemark_data_dir"]
+                    / "val"
+                    / f"{shoe_id}_{shoemark_id}.png",
                     "failed_val/",
                 )
 
@@ -436,7 +461,9 @@ def validate(
     return np.mean(ranks <= k)
 
 
-def validate_all_checkpoints(p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path):
+def validate_all_checkpoints(
+    p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path
+):
     checkpoint_dir = Path(checkpoint_dir)
     checkpoints = list(checkpoint_dir.glob("*.tar"))
     scores = defaultdict(float)
