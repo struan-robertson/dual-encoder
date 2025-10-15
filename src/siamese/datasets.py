@@ -9,7 +9,6 @@ import torch
 import torchvision.transforms.v2.functional as F
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision.transforms import v2 as transforms
 from tqdm import tqdm
 
 _dataset_mode = Literal["train", "test", "val", "aug_val"]
@@ -62,35 +61,6 @@ class IndividualDataset(Dataset):
         image = Image.open(file).convert("RGB")
 
         return F.to_tensor(image), file
-
-
-def gpu_transform(
-    image_size: tuple[int, int],
-    *,
-    mean: float | tuple[float, float, float],
-    std: float | tuple[float, float, float],
-    offset: bool = False,
-    offset_translation: tuple[int, int] = (64, 32),
-    offset_max_rotation: int = 10,
-    offset_scale_diff: float = 0.25,
-    flip: bool = True,
-    normalise: bool = True,
-):
-    """Initialise transforms for a dataset."""
-    transform_list = [transforms.Resize(image_size)]
-
-    if normalise:
-        transform_list.append(transforms.Normalize(mean, std))  # pyright: ignore [reportArgumentType]
-
-    if offset:
-        transform_list.append(
-            RandomOffsetTransormation(offset_translation, offset_max_rotation, offset_scale_diff)  # pyright: ignore [reportArgumentType]
-        )
-
-    if flip:
-        transform_list.append(transforms.RandomHorizontalFlip())  # pyright: ignore [reportArgumentType]
-
-    return transforms.Compose(transform_list)
 
 
 class LabeledCombinedDataset(Dataset):
