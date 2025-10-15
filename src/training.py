@@ -11,6 +11,7 @@ from typing import cast
 import numpy as np
 import torch
 import torch._dynamo.config as dynamo_config
+import torchvision
 from one_to_many_gan import GeneratorHandler, load_gan_config
 from tqdm import tqdm
 
@@ -20,6 +21,7 @@ from siamese.model import SharedSiamese
 from siamese.streaming import (
     AdaptiveNormalisation,
     DifficultyScheduler,
+    ShoemarkImpressionType,
     StreamingDataset,
     StreamingTransforms,
     create_shoemarks,
@@ -107,9 +109,7 @@ criterion = torch.nn.TripletMarginLoss(
 # ** Transforms
 
 # TODO specify in config
-streaming_transform = StreamingTransforms(
-    fill=0.0, min_ratio=0.25, size=config["data"]["image_size"]
-)
+streaming_transform = StreamingTransforms(fill=0.0, min_edge=128, size=config["data"]["image_size"])
 
 # TODO specify in config
 difficulty_scheduler = DifficultyScheduler(
@@ -209,6 +209,8 @@ def training_loop():
     checkpoint_dir = Path("../checkpoints") / config["training"]["name"]
     checkpoint_dir.mkdir(exist_ok=True)  # TODO remove this after testing
 
+    shoeprint_count = 0
+    shoemark_count = 0
     with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
         for epoch in range(config["training"]["epochs"]):
             pbar.set_description(f"Epoch: {epoch}")
@@ -238,16 +240,36 @@ def training_loop():
                     device=device,
                 )
 
-                shoeprints = streaming_transform.universal_transforms(shoeprints)
-                shoemarks = streaming_transform.universal_transforms(shoemarks)
+                shoeprints = streaming_transform.shoeprint_affine(shoeprints)
 
                 # Apply post blend transforms to shoemarks that did not feature pre blend transforms
-                shoemarks[~pre_blended_mask] = streaming_transform.post_blend_transform(
-                    shoemarks[~pre_blended_mask]
+                # Also leave background shoemarks be
+                background_mask = shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
+                shoemarks[~pre_blended_mask & ~background_mask] = (
+                    streaming_transform.post_blend_transform(
+                        shoemarks[~pre_blended_mask & ~background_mask]
+                    )
                 )
 
                 # Apply photometric transforms to all shoemarks
                 shoemarks = streaming_transform.photometric_transforms(shoemarks)
+
+                # just for testing
+                shoeprint_save_dir = "../testing/shoeprints"
+                shoemark_save_dir = "../testing/shoemarks"
+
+                for shoeprint in shoeprints:
+                    torchvision.utils.save_image(
+                        shoeprint, f"{shoeprint_save_dir}/{shoeprint_count}.png"
+                    )
+                    shoeprint_count += 1
+
+                for shoemark in shoemarks:
+                    torchvision.utils.save_image(
+                        shoemark, f"{shoemark_save_dir}/{shoemark_count}.png"
+                    )
+                    shoemark_count += 1
+                continue
 
                 # Use EMA for normalisations
                 shoeprints = adaptive_normalisation(shoeprints, update=True)
@@ -322,7 +344,7 @@ def training_loop():
             if epoch % config["training"]["print_iter"] == 0 and epoch != 0:
                 line = (
                     f"Epoch {epoch} loss: {(losses / config['training']['print_iter'])}"
-                    f"difficulty: {difficulty_scheduler.get_difficulty()}\n"
+                    f" difficulty: {difficulty_scheduler.get_difficulty()}\n"
                 )
                 _write_line(line, pbar, checkpoint_dir)
                 losses = 0
@@ -341,6 +363,7 @@ def training_loop():
                         "shoemark_model_state_dict": shoemark_model.state_dict(),
                         "shoeprint_optim_state_dict": shoeprint_optimizer.state_dict(),
                         "shoemark_optim_state_dict": shoemark_optimizer.state_dict(),
+                        "adaptive_normalisation_state_dict": adaptive_normalisation.state_dict(),
                     },
                     checkpoint_dir / f"siamese_{epoch}.tar",
                 )

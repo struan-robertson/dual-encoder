@@ -109,7 +109,7 @@ class StreamingDataset(Dataset):
             or floor_image.shape[1] != 512
             or shoemark_image.shape[1] != 512
         ):
-            breakpoint()
+            raise ValueError
 
         return shoeprint_image, floor_image, shoemark_image, torch.tensor(shoemark_image_type)
 
@@ -117,8 +117,9 @@ class StreamingDataset(Dataset):
         floor_image = random.choice(self.floor_tensors)
 
         # Randomly rotate by 0, 90, 180 or 270 degrees
-        k = random.randint(0, 3)
-        floor_image = torch.rot90(floor_image, k=k, dims=[-2, -1])
+        # TODO store rotated images in RAM
+        # k = random.randint(0, 3)
+        # floor_image = torch.rot90(floor_image, k=k, dims=[-2, -1])
 
         # Get tensor dimensions
         _, h, w = floor_image.shape
@@ -153,26 +154,20 @@ class StreamingDataset(Dataset):
 class RandomCropAndPad:
     """Randomly crop a batch of tensors and then scale and pad back to original shape."""
 
-    def __init__(
-        self, fill: float = 0.0, min_ratio: float = 0.25, size: tuple[int, int] = (512, 256)
-    ):
+    def __init__(self, fill: float = 0.0, min_edge: int = 64, size: tuple[int, int] = (512, 256)):
         self.random_crop = transforms.RandomCrop(size)
         self.fill = fill
-        self.min_ratio = min_ratio
+        self.min_edge = min_edge
         self.height, self.width = size
 
     def __call__(self, shoemarks: torch.Tensor):
-        height_ratio = self.min_ratio + (1.0 - self.min_ratio) * torch.rand(1)
-        width_ratio = self.min_ratio + (1.0 - self.min_ratio) * torch.rand(1)
-
-        new_height = int(self.height * height_ratio)
-        new_width = int(self.width * width_ratio)
+        new_height = int(torch.randint(self.min_edge, self.height, (1,)))
+        new_width = int(torch.randint(self.min_edge, self.width, (1,)))
 
         self.random_crop.size = (new_height, new_width)
         cropped = self.random_crop(shoemarks)
 
         aspect_ratio = new_height / new_width
-
         if new_height > new_width:
             scaled_height = self.height
             scaled_width = int(self.height / aspect_ratio)
@@ -225,15 +220,15 @@ def create_shoemarks(
     no_background_shoemarks = shoemarks[no_background_mask]
     no_shoemark_shoeprints = shoeprints[no_shoemark_mask]
 
-    # Floor images for shoemarks requiring them
-    floor_images = floor_images[shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK]
-
     # Generate shoemarks using shoeprints
     generated_shoemarks = generator_handler.generate(
         F.rgb_to_grayscale(no_shoemark_shoeprints), difficulty=difficulty, normalised=False
     )
     b, _, h, w = generated_shoemarks.shape
     generated_shoemarks = generated_shoemarks.expand(b, 3, h, w)
+
+    # Floor images for shoemarks requiring them
+    floor_images = floor_images[shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK]
 
     # Combine no_background and generated shoemarks
     no_background_shoemarks = torch.cat([no_background_shoemarks, generated_shoemarks])
@@ -249,6 +244,16 @@ def create_shoemarks(
 
     no_background_shoemarks[pre_blend_transformed] = streaming_transform.pre_blend_transforms(
         no_background_shoemarks[pre_blend_transformed]
+    )
+
+    # Convert some shoemarks to blue (enhanced blood)
+    no_background_shoemarks[include_background] = streaming_transform.shoemark_blue_shift(
+        no_background_shoemarks[include_background]
+    )
+
+    # Don't affine cropped shoemarks
+    no_background_shoemarks[~pre_blend_transformed] = streaming_transform.shoemark_affine(
+        no_background_shoemarks[~pre_blend_transformed]
     )
 
     synth_background_shoemarks = (
@@ -290,65 +295,67 @@ class StreamingTransforms:
     def __init__(
         self,
         fill: float = 0.0,
-        min_ratio: float = 0.25,
+        min_edge: int = 64,
         size: tuple[int, int] = (512, 256),
     ):
         self.post_blend_transform = transforms.RandomApply(
-            transforms=[RandomCropAndPad(fill=fill, min_ratio=min_ratio, size=size)], p=0.5
+            transforms=[RandomCropAndPad(fill=fill, min_edge=min_edge, size=size)], p=0.5
         )
 
         # TODO this may be too aggressive for shoeprints
-        self.universal_transforms = transforms.Compose(
+        # TODO specify in config
+        self.shoemark_affine = transforms.Compose(
             [
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomAffine(
-                    degrees=70,  # pyright: ignore [reportArgumentType]
+                    degrees=20,  # pyright: ignore [reportArgumentType]
                     translate=(0.1, 0.3),
-                    scale=(0.5, 1.0),
+                    scale=(0.75, 1.25),
                     fill=1.0,
                     shear=[0.1] * 4,
                 ),
             ]
         )
+        self.shoeprint_affine = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomAffine(
+                    degrees=10,  # pyright: ignore [reportArgumentType]
+                    translate=(0.05, 0.15),
+                    scale=(0.9, 1.1),
+                    fill=1.0,
+                    shear=[0.05] * 4,
+                ),
+            ]
+        )
 
+        def shoemark_blue_shift(shoemark: torch.Tensor):
+            shift_amount = torch.rand(shoemark.shape[0], device=shoemark.device) * 0.25
+            shoemark[:, 2, :, :].add_(shift_amount[:, None, None])
+            return shoemark
+
+        self.shoemark_blue_shift = transforms.RandomApply(
+            [shoemark_blue_shift, transforms.Lambda(lambda x: torch.clamp(x, 0, 1))], p=1 / 3
+        )
+
+        # TODO specify in config
         self.photometric_transforms = transforms.Compose(
             [
-                transforms.RandomApply([transforms.ColorJitter(brightness=0.5, hue=0.3)], p=0.5),
-                transforms.RandomApply(
-                    [transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0))], p=0.5
+                transforms.RandomChoice(
+                    [
+                        transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0)),
+                        transforms.RandomAdjustSharpness(sharpness_factor=2),
+                    ]
                 ),
-                transforms.RandomApply(
-                    [transforms.RandomAdjustSharpness(sharpness_factor=2)], p=0.5
-                ),
+                transforms.RandomApply([transforms.ColorJitter(brightness=0.4, hue=0.2)], p=0.5),
+                transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
             ]
         )
 
-        max_erasing_ratio = 1.0 - min_ratio
-        single_erase = transforms.RandomErasing(
+        # TODO set in config
+        max_erasing_ratio = 0.5
+        self.pre_blend_transforms = transforms.RandomErasing(
             p=1, scale=(0.1, max_erasing_ratio), ratio=(0.3, 3.33), value=1.0
-        )
-        multi_erase = transforms.Compose(
-            [
-                transforms.RandomErasing(
-                    p=1, scale=(0.1, max_erasing_ratio), ratio=(1.5, 2.5), value=1.0
-                ),
-                transforms.RandomErasing(
-                    p=1, scale=(0.1, max_erasing_ratio), ratio=(0.5, 1.5), value=1.0
-                ),
-            ]
-        )
-
-        # Maybe useful for training resilience against aspect ratio changes
-        random_resize_crop = transforms.RandomResizedCrop(
-            (512, 256), scale=(min_ratio * 2, 1.0), ratio=(0.45, 0.55)
-        )
-
-        self.pre_blend_transforms = transforms.Compose(
-            [
-                transforms.RandomApply([single_erase], p=0.5),
-                transforms.RandomApply([multi_erase], p=0.5),
-                transforms.RandomApply([random_resize_crop], p=0.5),
-            ]
         )
 
 
