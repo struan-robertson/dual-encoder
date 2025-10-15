@@ -120,7 +120,7 @@ streaming_transform = StreamingTransforms(
 difficulty_scheduler = DifficultyScheduler(
     initial_difficulty=0.2,
     max_difficulty=1.0,
-    peak_steps=500,
+    peak_steps=2_500,
 )
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
