@@ -99,14 +99,14 @@ class StreamingDataset(Dataset):
         self.synthetic_ratio = synthetic_ratio
 
     def __len__(self):
-        return len(self.shoeprint_tensors)
+        return len(self.shoeprint_classes)
 
     def __getitem__(self, idx):
         shoeprint_class = self.shoeprint_classes[idx]
 
-        shoeprint_image = random.choice(self.shoeprint_tensors[idx])
+        shoeprint_image = random.choice(self.shoeprint_tensors[shoeprint_class])
         # Its not an issue if they might be the same, and some shoeprints have only one image
-        shoeprint_gen_image = random.choice(self.shoeprint_tensors[idx])
+        shoeprint_gen_image = random.choice(self.shoeprint_tensors[shoeprint_class])
 
         # For shoeprints that have a shoemark, we don't always want to use the real shoemark
         use_synthetic = random.random() > self.synthetic_ratio
