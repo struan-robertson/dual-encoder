@@ -44,15 +44,17 @@ class _Training(TypedDict):
 
 class _Streaming(TypedDict):
     floor_image_data_dir: Path
+    shoeprint_data_dir: Path
+    shoemark_data_dir: Path
     min_floor_roi_height: int
     synthetic_ratio: float
 
 
 class _Data(TypedDict):
-    shoeprint_data_dir: Path
+    shoeprint_val_dir: Path
     shoeprint_dataset_mean: tuple[float, float, float]
     shoeprint_dataset_std: tuple[float, float, float]
-    shoemark_data_dir: Path
+    shoemark_val_dir: Path
     shoemark_dataset_mean: tuple[float, float, float]
     shoemark_dataset_std: tuple[float, float, float]
     streaming: _Streaming
@@ -76,8 +78,14 @@ def load_config(path: Path | str):
     with path.open("rb") as f:
         config: Config = tomllib.load(f)  # type: ignore[assignment]
 
-    config["data"]["shoeprint_data_dir"] = Path(config["data"]["shoeprint_data_dir"])
-    config["data"]["shoemark_data_dir"] = Path(config["data"]["shoemark_data_dir"])
+    config["data"]["streaming"]["shoeprint_data_dir"] = Path(
+        config["data"]["streaming"]["shoeprint_data_dir"]
+    )
+    config["data"]["streaming"]["shoemark_data_dir"] = Path(
+        config["data"]["streaming"]["shoemark_data_dir"]
+    )
+    config["data"]["shoeprint_val_dir"] = Path(config["data"]["shoeprint_val_dir"])
+    config["data"]["shoemark_val_dir"] = Path(config["data"]["shoemark_val_dir"])
     config["data"]["wvu_data_dir"] = Path(config["data"]["wvu_data_dir"])
     config["data"]["fid_data_dir"] = Path(config["data"]["fid_data_dir"])
     config["training"]["gan_config"] = Path(config["training"]["gan_config"])
