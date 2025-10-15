@@ -28,7 +28,7 @@ from tqdm import tqdm
 
 
 config = (
-    load_config("../config.toml")
+    load_config("config.toml")
     if len(sys.argv) < 2 or sys.argv[1] == "" or sys.argv[1] == "-i"
     else load_config(sys.argv[1])
 )
@@ -213,7 +213,7 @@ def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
 # Violating d(anchor, positive) < d(anchor, negative) < d(anchor, positive) + margin
 def training_loop():
     """Run training loop for siamese model."""
-    checkpoint_dir = Path("../checkpoints") / config["training"]["name"]
+    checkpoint_dir = Path("checkpoints") / config["training"]["name"]
     checkpoint_dir.mkdir(exist_ok=True)  # TODO remove this after testing
 
     with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
