@@ -317,7 +317,7 @@ def training_loop():
                 # Extract negative embeddings
                 negatives = shoemark_embeddings[neg_idxs]
 
-                batch_sizes += len(negatives)
+                batch_sizes += len(shoeprint_embeddings)
 
                 # Calculate triplet loss
                 loss = criterion(shoeprint_embeddings, shoemark_embeddings, negatives)
