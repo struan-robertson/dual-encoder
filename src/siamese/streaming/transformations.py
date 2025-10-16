@@ -4,6 +4,7 @@ import torch
 import torchvision.transforms.v2 as transforms
 import torchvision.transforms.v2.functional as F
 from one_to_many_gan import GeneratorHandler
+
 from siamese.streaming import ShoemarkImpressionType
 
 
@@ -78,6 +79,18 @@ class StreamingTransforms:
                     scale=(0.75, 1.25),
                     fill=1.0,
                     shear=[0.1] * 4,
+                ),
+            ]
+        )
+        self.shoemark_back_affine = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomAffine(
+                    degrees=10,  # pyright: ignore [reportArgumentType]
+                    translate=(0.05, 0.15),
+                    scale=(0.9, 1.1),
+                    fill=0.0,
+                    shear=[0.05] * 4,
                 ),
             ]
         )
@@ -157,23 +170,29 @@ def shoemark_pipeline(
     no_background_shoemarks = shoemarks[no_background_mask]
     no_shoemark_shoeprints = shoeprints[no_shoemark_mask]
 
-    # Generate shoemarks using shoeprints
-    generated_shoemarks = generator_handler.generate(
-        F.rgb_to_grayscale(no_shoemark_shoeprints),
-        difficulty=difficulty,
-        normalised=False,
-    )
-    b, _, h, w = generated_shoemarks.shape
-    generated_shoemarks = generated_shoemarks.expand(b, 3, h, w)
+    if len(no_shoemark_shoeprints) > 0:
+        # Generate shoemarks using shoeprints
+        generated_shoemarks = generator_handler.generate(
+            F.rgb_to_grayscale(no_shoemark_shoeprints),
+            difficulty=difficulty,
+            normalised=False,
+        )
+        b, _, h, w = generated_shoemarks.shape
+        generated_shoemarks = generated_shoemarks.expand(b, 3, h, w)
+
+        # Combine no_background and generated shoemarks
+        no_background_shoemarks = torch.cat(
+            [no_background_shoemarks, generated_shoemarks]
+        )
+        combined_indices = torch.cat([no_background_indices, no_shoemark_indices])
+
+    else:
+        combined_indices = no_background_indices
 
     # Floor images for shoemarks requiring them
     floor_images = floor_images[
         shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK
     ]
-
-    # Combine no_background and generated shoemarks
-    no_background_shoemarks = torch.cat([no_background_shoemarks, generated_shoemarks])
-    combined_indices = torch.cat([no_background_indices, no_shoemark_indices])
 
     # Determine which need background substitution
     include_background = no_background_shoemarks.std(dim=(1, 2, 3)) > 0.08
