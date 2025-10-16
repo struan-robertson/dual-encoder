@@ -11,8 +11,10 @@ from typing import cast
 import numpy as np
 import torch
 from one_to_many_gan import GeneratorHandler, load_gan_config
+from tqdm import tqdm
+
 from siamese.config import load_config
-from siamese.datasets import LabeledCombinedDataset, gpu_transform
+from siamese.datasets import LabeledCombinedDataset
 from siamese.model import SharedSiamese
 from siamese.streaming import (
     AdaptiveNormalisation,
@@ -22,7 +24,6 @@ from siamese.streaming import (
     StreamingTransforms,
     shoemark_pipeline,
 )
-from tqdm import tqdm
 
 # * Config
 
@@ -62,7 +63,7 @@ if torch.cuda.is_available():
 
 # * PyTorch
 
-torch._dynamo.config.cache_size_limit = config["hyperparameters"]["batch_size"]
+torch._dynamo.config.cache_size_limit = config["hyperparameters"]["batch_size"]  # noqa: SLF001
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -117,7 +118,7 @@ criterion = torch.nn.TripletMarginLoss(
 
 # TODO specify in config
 streaming_transform = StreamingTransforms(
-    fill=0.0, min_edge=128, size=config["data"]["image_size"]
+    fill=0.0, min_edge=225, size=config["data"]["image_size"]
 )
 
 # TODO specify in config
@@ -129,34 +130,19 @@ difficulty_scheduler = DifficultyScheduler(
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
 imagenet_std = torch.tensor([0.229, 0.224, 0.225])
-adaptive_normalisation = AdaptiveNormalisation(
+shoeprint_adaptive_norm = AdaptiveNormalisation(
     imagenet_mean, imagenet_std, device=gan_device, momentum=0.9
 )
-
-shoeprint_normal_transform = gpu_transform(
-    config["data"]["image_size"],
-    mean=config["data"]["shoeprint_dataset_mean"],
-    std=config["data"]["shoeprint_dataset_std"],
-    offset=False,
-    flip=False,
-)
-
-shoemark_normal_transform = gpu_transform(
-    config["data"]["image_size"],
-    mean=config["data"]["shoemark_dataset_mean"],
-    std=config["data"]["shoemark_dataset_std"],
-    offset=False,
-    flip=False,
+shoemark_adaptive_norm = AdaptiveNormalisation(
+    imagenet_mean, imagenet_std, device=gan_device, momentum=0.9
 )
 
 
 # ** Training
 
-# TODO start at imagenet normalisations and then update progressively using streaming data
-
 dataset = StreamingDataset(
-    config["data"]["shoeprint_data_dir"],
-    config["data"]["shoemark_data_dir"],
+    config["data"]["streaming"]["shoeprint_data_dir"],
+    config["data"]["streaming"]["shoemark_data_dir"],
     config["data"]["streaming"]["floor_image_data_dir"],
     config["data"]["image_size"],
     config["data"]["streaming"]["min_floor_roi_height"],
@@ -167,11 +153,10 @@ loader = torch.utils.data.DataLoader(
     dataset,
     batch_size=config["hyperparameters"]["batch_size"],
     shuffle=True,
-    num_workers=0,
+    num_workers=0,  # All images are in RAM
     pin_memory=True,
     drop_last=False,
     worker_init_fn=seed_worker,
-    # persistent_workers=True,
     generator=dataloader_g,
 )
 
@@ -179,22 +164,21 @@ generator_handler = GeneratorHandler(gan_config, gan_device)
 
 # ** Validation
 
-# val_dataset = LabeledCombinedDataset(
-#     config["data"]["shoeprint_data_dir"],
-#     config["data"]["shoemark_data_dir"],
-#     mode="aug_val",
-# )
+val_dataset = LabeledCombinedDataset(
+    config["data"]["shoeprint_val_dir"],
+    config["data"]["shoemark_val_dir"],
+)
 
 # ** Testing
 
 # wvu_dataset = LabeledCombinedDataset(
-#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",
-#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoemarks/",
+#    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",
+#    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoemarks/",
 #     mode="test",
 # )
 
 # fid_dataset = LabeledCombinedDataset(
-#     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoeprints/",
+#    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoeprints/",
 #     "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/FID-300/Shoemarks/",
 #     mode="test",
 # )
@@ -251,23 +235,28 @@ def training_loop():
 
                     shoeprints = streaming_transform.shoeprint_affine(shoeprints)
 
-                    # Apply post blend transforms to shoemarks that did not feature pre blend
-                    # transforms or pre-existing background
+                    # Apply post blend transforms to shoemarks that did not feature pre
+                    # blend transforms or pre-existing background
                     background_mask = (
                         shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
                     )
+                    # TODO I shouldn't affine transform _and_ crop
                     shoemarks[~pre_blended_mask & ~background_mask] = (
                         streaming_transform.post_blend_transform(
                             shoemarks[~pre_blended_mask & ~background_mask]
                         )
                     )
 
-                    # Apply photometric transforms to all shoemarks
-                    shoemarks = streaming_transform.photometric_transforms(shoemarks)
+                    # Apply photometric transforms to no back shoemarks
+                    shoemarks[~background_mask] = (
+                        streaming_transform.photometric_transforms(
+                            shoemarks[~background_mask]
+                        )
+                    )
 
                     # Use EMA for normalisations
-                    shoeprints = adaptive_normalisation(shoeprints, update=True)
-                    shoemarks = adaptive_normalisation(shoemarks, update=True)
+                    shoeprints = shoeprint_adaptive_norm(shoeprints, update=True)
+                    shoemarks = shoemark_adaptive_norm(shoemarks, update=True)
 
                     # Transfer to other GPU
                     shoeprints = shoeprints.to(device)
@@ -294,7 +283,7 @@ def training_loop():
                 # Positive distances
                 pos_dists = dists.diag().view(-1, 1)
 
-                # Mask to exclude the positive pairs (0s everywhere apart from the diagonal)
+                # Mask to exclude the positive pairs (0s apart from the diagonal)
                 idt_mask = torch.eye(pos_dists.size(0), dtype=torch.bool, device=device)
 
                 # Identify semi-hard violations
@@ -305,7 +294,8 @@ def training_loop():
 
                 # Store indices of selected negatives
                 neg_idxs = []
-                # As we don't drop the last batch, this may be less than overall batch size
+                # As we don't drop the last batch,
+                # this may be less than overall batch size
                 current_batch_size = shoeprint_batch.shape[0]
                 for i in range(current_batch_size):
                     violation_inds = torch.where(semi_hard_mask[i])[0]
@@ -369,7 +359,8 @@ def training_loop():
                         "shoemark_model_state_dict": shoemark_model.state_dict(),
                         "shoeprint_optim_state_dict": shoeprint_optimizer.state_dict(),
                         "shoemark_optim_state_dict": shoemark_optimizer.state_dict(),
-                        "adaptive_normalisation_state_dict": adaptive_normalisation.state_dict(),
+                        "shoeprint_adaptive_norm_state_dict": shoeprint_adaptive_norm.state_dict(),  # noqa: E501
+                        "shoemark_adaptive_norm_state_dict": shoemark_adaptive_norm.state_dict(),  # noqa: E501
                     },
                     checkpoint_dir / f"siamese_{epoch}.tar",
                 )
@@ -408,21 +399,29 @@ def validate(
         checkpoint = torch.load(checkpoint, map_location=device)
         shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"])  # pyright: ignore
         shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"])  # pyright: ignore
+        shoeprint_adaptive_norm.load_state_dict(
+            checkpoint["shoeprint_adaptive_norm_state_dict"]  # pyright: ignore
+        )
+        shoemark_adaptive_norm.load_state_dict(
+            checkpoint["shoemark_adaptive_norm_state_dict"]  # pyright: ignore
+        )
 
     shoeprint_embeddings = defaultdict(lambda: torch.zeros(1))
     shoemark_embeddings = defaultdict(lambda: torch.zeros(1))
 
     for shoeprint_class, (shoeprint, shoemarks) in dataset:
-        normalised_shoeprint = shoeprint_normal_transform(shoeprint.to(device))
+        normalised_shoeprint = shoeprint_adaptive_norm(shoeprint, update=False)
         shoeprint_embedding = shoeprint_model(normalised_shoeprint.unsqueeze(0)).cpu()
         shoeprint_embeddings[shoeprint_class] = shoeprint_embedding.squeeze()
 
-        # Not as fast as batching all shoemarks but works for very large numbers of shoemarks
+        # Not as fast as batching all shoemarks but works for very large numbers
         if len(shoemarks) > 0:
             shoemark_embeddings[shoeprint_class] = torch.cat(
                 [
                     shoemark_model(
-                        shoemark_normal_transform(shoemark.to(device)).unsqueeze(0)
+                        shoemark_adaptive_norm(
+                            shoemark.to(device), update=False
+                        ).unsqueeze(0)
                     ).cpu()
                     for shoemark in shoemarks
                 ]
@@ -456,9 +455,7 @@ def validate(
             ranks.append(rank)
             if move_failures and rank > k:
                 shutil.copy(
-                    config["data"]["shoemark_data_dir"]
-                    / "val"
-                    / f"{shoe_id}_{shoemark_id}.png",
+                    config["data"]["shoemark_val_dir"] / f"{shoe_id}_{shoemark_id}.png",
                     "failed_val/",
                 )
 
@@ -470,6 +467,7 @@ def validate(
 def validate_all_checkpoints(
     p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path
 ):
+    """Validate all checkpoints in a direcory."""
     checkpoint_dir = Path(checkpoint_dir)
     checkpoints = list(checkpoint_dir.glob("*.tar"))
     scores = defaultdict(float)
