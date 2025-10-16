@@ -50,7 +50,7 @@ image_size = [512, 256]
 
 
 [data.streaming]
-floor_image_data_dir = "~/Development/Doctorate/one_to_many_gan/flooring/"
+floor_image_data_dir = "~/Development/Doctorate/siamese/data/flooring/"
 shoeprint_data_dir = "~/Development/Doctorate/siamese/data/Streaming/Shoeprints/"
 shoemark_data_dir = "~/Development/Doctorate/siamese/data/Streaming/Shoemarks/"
 min_floor_roi_height = 512

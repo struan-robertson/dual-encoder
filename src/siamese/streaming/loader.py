@@ -9,9 +9,10 @@ from pathlib import Path
 import torch
 import torchvision.transforms.v2.functional as F
 from PIL import Image
-from siamese.datasets import find_all_images
 from torch.utils.data import Dataset
 from torchvision.transforms.v2 import InterpolationMode
+
+from siamese.datasets import find_all_images
 
 
 class ShoemarkImpressionType(IntEnum):
@@ -41,6 +42,8 @@ class StreamingDataset(Dataset):
         image_size: tuple[int, int],
         min_floor_roi_height: int,
         synthetic_ratio: float,
+        *,
+        val: bool = False,
     ):
         #  / "train" # Streaming is only used for training
         shoeprint_path = Path(shoeprint_path).expanduser()
@@ -54,6 +57,7 @@ class StreamingDataset(Dataset):
             _260 = torch.rot90(image, 3, dims=[-2, -1])
             return _0, _90, _180, _260
 
+        floor_path = floor_path / "val" if val else floor_path / "train"
         floor_files = find_all_images(floor_path)
         floor_tensors = [
             F.to_tensor(Image.open(floor_path).convert("RGB"))
@@ -95,6 +99,7 @@ class StreamingDataset(Dataset):
         self.image_size = image_size
         self.min_floor_roi_height = min_floor_roi_height
         self.synthetic_ratio = synthetic_ratio
+        self.val = val
 
     def __len__(self):
         return len(self.shoeprint_classes)
@@ -103,12 +108,11 @@ class StreamingDataset(Dataset):
         shoeprint_class = self.shoeprint_classes[idx]
 
         shoeprint_image = random.choice(self.shoeprint_tensors[shoeprint_class])
-        # Its not an issue if they might be the same, and some shoeprints have only one image
+        # Its not an issue if they might be the same, shoeprints may have only one image
         shoeprint_gen_image = random.choice(self.shoeprint_tensors[shoeprint_class])
 
-        # For shoeprints that have a shoemark, we don't always want to use the real shoemark
-        use_synthetic = random.random() > self.synthetic_ratio
-
+        # For shoeprints that have a real shoemark, we don't always want to use it
+        use_synthetic = random.random() < self.synthetic_ratio
         if not use_synthetic and shoeprint_class in self.shoemark_tensors:
             shoemark = random.choice(self.shoemark_tensors[shoeprint_class])
             shoemark_image = shoemark.data
@@ -119,14 +123,24 @@ class StreamingDataset(Dataset):
 
         floor_image = self._get_floor_image()
 
-        # The shoemark_image_type will be used for masking shoemark_image and floor_image, as
-        # these are not required for all shoeprints
+        # The shoemark_image_type will be used for masking shoemark_image and
+        # floor_image, as these are not required for all shoeprints
         if (
             shoeprint_image.shape[1] != 512
             or floor_image.shape[1] != 512
             or shoemark_image.shape[1] != 512
         ):
             raise ValueError
+
+        if self.val:
+            return (
+                shoeprint_image,
+                shoeprint_gen_image,
+                floor_image,
+                shoemark_image,
+                torch.tensor(shoemark_image_type),
+                shoeprint_class,
+            )
 
         return (
             shoeprint_image,

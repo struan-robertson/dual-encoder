@@ -48,8 +48,8 @@ def calculate_stats(loader: torch.utils.data.DataLoader):
 class IndividualDataset(Dataset):
     """Load either shoeprint or shoemark images. Used for statistic calculations."""
 
-    def __init__(self, path: Path | str, *, mode: _dataset_mode = "train"):
-        path = Path(path).expanduser() / mode
+    def __init__(self, path: Path | str):
+        path = Path(path).expanduser()
 
         self.files = find_all_images(path)
 
@@ -70,15 +70,9 @@ class LabeledCombinedDataset(Dataset):
         self,
         shoeprint_path: Path | str,
         shoemark_path: Path | str,
-        *,
-        mode: _dataset_mode,
     ):
         shoeprint_path = Path(shoeprint_path).expanduser()
         shoemark_path = Path(shoemark_path).expanduser()
-
-        if mode != "test":
-            shoeprint_path = shoeprint_path / mode
-            shoemark_path = shoemark_path / mode
 
         self.shoeprint_files = find_all_images(shoeprint_path)
 
@@ -91,8 +85,6 @@ class LabeledCombinedDataset(Dataset):
 
         self.shoemark_classes = shoemark_classes
 
-        self.mode = mode
-
     def __len__(self):
         return len(self.shoeprint_files)
 
@@ -104,18 +96,12 @@ class LabeledCombinedDataset(Dataset):
         shoeprint_image = F.to_tensor(shoeprint_image)
 
         # For validation/testing we want to test all shoeprints for a shoemark
-        if self.mode in {"val", "aug_val", "test"}:
-            shoemark_files = self.shoemark_classes[shoeprint_class]
-            shoemark_images = tuple(
-                F.to_tensor(Image.open(f).convert("RGB")) for f in shoemark_files
-            )
+        shoemark_files = self.shoemark_classes[shoeprint_class]
+        shoemark_images = tuple(
+            F.to_tensor(Image.open(f).convert("RGB")) for f in shoemark_files
+        )
 
-            return shoeprint_class, (shoeprint_image, shoemark_images)
-
-        shoemark_file = random.choice(self.shoemark_classes[shoeprint_class])
-        shoemark_image = F.to_tensor(Image.open(shoemark_file).convert("RGB"))
-
-        return shoeprint, shoemark_image
+        return shoeprint_class, (shoeprint_image, shoemark_images)
 
     # Used for validation/test datasets where we don't work in batches
     def __iter__(self):
