@@ -80,3 +80,15 @@ class DifficultyScheduler:
 
     def get_difficulty(self):
         return self.difficulty
+
+    def state_dict(self):
+        return {
+            "difficulty": self.difficulty,
+            "max_difficulty": self.max_difficulty,
+            "step_amount": self.step_amount,
+        }
+
+    def load_state_dict(self, state_dict: dict):
+        self.difficulty = state_dict["difficulty"]
+        self.max_difficulty = state_dict["max_difficulty"]
+        self.step_amount = state_dict["step_amount"]

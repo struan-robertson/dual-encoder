@@ -359,8 +359,9 @@ def training_loop():
                         "shoemark_model_state_dict": shoemark_model.state_dict(),
                         "shoeprint_optim_state_dict": shoeprint_optimizer.state_dict(),
                         "shoemark_optim_state_dict": shoemark_optimizer.state_dict(),
-                        "shoeprint_adaptive_norm_state_dict": shoeprint_adaptive_norm.state_dict(),  # noqa: E501
-                        "shoemark_adaptive_norm_state_dict": shoemark_adaptive_norm.state_dict(),  # noqa: E501
+                        "shoeprint_adaptive_norm_state_dict": shoeprint_adaptive_norm.state_dict(),
+                        "shoemark_adaptive_norm_state_dict": shoemark_adaptive_norm.state_dict(),
+                        "difficulty_scheduler_state_dict": difficulty_scheduler.state_dict(),
                     },
                     checkpoint_dir / f"siamese_{epoch}.tar",
                 )
