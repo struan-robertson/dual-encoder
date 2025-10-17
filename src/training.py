@@ -349,9 +349,9 @@ def training_loop():
                 epoch % config["training"]["val_iter"] == 0
                 or epoch == config["training"]["epochs"] - 1
             ) and epoch != 0:
-                # val = validate(p=5, dataset=val_dataset)
-                # line = f"Epoch {epoch} p5 validation: = {val}\n"
-                # _write_line(line, pbar, checkpoint_dir)
+                val = validate(p=5, dataset=val_dataset)
+                line = f"Epoch {epoch} p5 validation: = {val}\n"
+                _write_line(line, pbar, checkpoint_dir)
 
                 torch.save(
                     {
