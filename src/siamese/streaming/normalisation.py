@@ -49,7 +49,7 @@ class AdaptiveNormalisation:
             "mean": self.mean,
             "std": self.std,
             "momentum": self.momentum,
-            "n_sampels": self.n_samples,
+            "n_samples": self.n_samples,
         }
 
     def load_state_dict(self, state_dict: dict):
