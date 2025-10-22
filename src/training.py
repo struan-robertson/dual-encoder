@@ -439,8 +439,10 @@ def validate(
     shoemark_embeddings = defaultdict(lambda: torch.zeros(1))
 
     for shoeprint_class, (shoeprint, shoemarks) in dataset:
-        normalised_shoeprint = shoeprint_adaptive_norm(shoeprint, update=False)
-        shoeprint_embedding = shoeprint_model(normalised_shoeprint.unsqueeze(0)).cpu()
+        normalised_shoeprint = shoeprint_adaptive_norm(
+            shoeprint.to(device), update=False
+        )
+        shoeprint_embedding = shoeprint_model(normalised_shoeprint).cpu()
         shoeprint_embeddings[shoeprint_class] = shoeprint_embedding.squeeze()
 
         # Not as fast as batching all shoemarks but works for very large numbers
@@ -448,9 +450,7 @@ def validate(
             shoemark_embeddings[shoeprint_class] = torch.cat(
                 [
                     shoemark_model(
-                        shoemark_adaptive_norm(
-                            shoemark.to(device), update=False
-                        ).unsqueeze(0)
+                        shoemark_adaptive_norm(shoemark.to(device), update=False)
                     ).cpu()
                     for shoemark in shoemarks
                 ]
