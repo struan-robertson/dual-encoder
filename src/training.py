@@ -65,8 +65,10 @@ if torch.cuda.is_available():
 
 torch._dynamo.config.cache_size_limit = config["hyperparameters"]["batch_size"]  # noqa: SLF001
 
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+torch.backends.fp32_precision = "tf32"  # pyright: ignore [reportAttributeAccessIssue]
+torch.backends.cuda.fp32_precision = "tf32"  # pyright: ignore [reportAttributeAccessIssue]
+torch.backends.cudnn.fp32_precision = "tf32"  # pyright: ignore [reportAttributeAccessIssue]
+
 
 device = torch.device(
     f"cuda:{config['training']['gpu_number']}" if torch.cuda.is_available() else "cpu"
