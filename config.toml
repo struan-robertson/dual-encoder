@@ -7,7 +7,7 @@ triplet_swapping = true
 
 [training]
 seed = 4242
-epochs = 10_000
+epochs = 15_000
 gpu_number = 0
 print_iter = 100
 val_iter = 500
@@ -38,11 +38,6 @@ max_scale = 0.125
 flip = true
 
 [data]
-# TODO remove these
-shoeprint_dataset_mean = [0.8864, 0.8864, 0.8864] 
-shoeprint_dataset_std = [0.2424, 0.2424, 0.2424]
-shoemark_dataset_mean = [0.6919, 0.6443, 0.5891]
-shoemark_dataset_std = [0.2416, 0.2508, 0.2796]
 shoeprint_val_dir = "~/Development/Doctorate/siamese/data/Shoeprints/val/"
 shoemark_val_dir = "~/Development/Doctorate/siamese/data/Shoemarks/val/"
 wvu_data_dir = "~/Development/Doctorate/siamese/data/Testing/WVU2019/"
