@@ -58,7 +58,7 @@ class SharedSiamese(nn.Module):
             5: self.model.conv1,
         }
 
-        if self.permafrost > 0 and idx > self.permafrost:
+        if idx > 5 or (self.permafrost > 0 and idx > self.permafrost):
             return
 
         for param in layer_mappings[idx].parameters():  # pyright: ignore [reportAttributeAccessIssue]
@@ -67,6 +67,10 @@ class SharedSiamese(nn.Module):
         if self.refreeze and idx >= 1 and idx <= 5:
             for param in layer_mappings[idx - 1].parameters():  # pyright: ignore [reportAttributeAccessIssue]
                 param.requires_grad = False
+
+    def unfreeze_to(self, idx: int):
+        for i in range(idx):
+            self.unfreeze_idx(i)
 
     def forward(self, x):
         return self.model(x)

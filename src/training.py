@@ -186,6 +186,32 @@ val_dataset = LabeledCombinedDataset(
 
 # * Main loop
 
+# TODO extract into a separate function
+# TODO start at 1
+start_epoch = 0
+if config["training"]["resume_checkpoint"]:
+    checkpoint = torch.load(
+        config["training"]["resume_checkpoint"], map_location=device
+    )
+    shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"])
+    shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"])
+    shoeprint_adaptive_norm.load_state_dict(
+        checkpoint["shoeprint_adaptive_norm_state_dict"]
+    )
+    shoemark_adaptive_norm.load_state_dict(
+        checkpoint["shoemark_adaptive_norm_state_dict"]
+    )
+    difficulty_scheduler.load_state_dict(checkpoint["difficulty_scheduler_state_dict"])
+    difficulty_scheduler.difficulty = 1.0
+    start_epoch = int(config["training"]["resume_checkpoint"].stem.split("_")[-1])
+
+    # FIXME this wont currently work if epochs start unfreezing later than 0
+    unfrozen_layers = (
+        start_epoch // config["training"]["pre_training"]["epoch_unfreeze"]
+    )
+    shoeprint_model.unfreeze_to(unfrozen_layers)
+    shoemark_model.unfreeze_to(unfrozen_layers)
+
 
 def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
     pbar.write(line, end="")
@@ -198,10 +224,12 @@ def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
 def training_loop():
     """Run training loop for siamese model."""
     checkpoint_dir = Path("checkpoints") / config["training"]["name"]
-    checkpoint_dir.mkdir(exist_ok=True)  # TODO remove this after testing
+    checkpoint_dir.mkdir(exist_ok=True)
 
-    with tqdm(total=config["training"]["epochs"], dynamic_ncols=True) as pbar:
-        for epoch in range(config["training"]["epochs"]):
+    with tqdm(
+        total=config["training"]["epochs"], dynamic_ncols=True, initial=start_epoch
+    ) as pbar:
+        for epoch in range(start_epoch, config["training"]["epochs"]):
             pbar.set_description(f"Epoch: {epoch}")
             losses = 0
             batch_sizes = 0

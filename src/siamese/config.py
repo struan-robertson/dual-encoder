@@ -1,8 +1,9 @@
 """Define typed config options."""
 
-import tomllib
 from pathlib import Path
 from typing import TypedDict
+
+import tomllib
 
 
 class _Hyperparameters(TypedDict):
@@ -40,6 +41,7 @@ class _Training(TypedDict):
     shoemark_augmentation: _Augmentation
     shoeprint_augmentation: _Augmentation
     gan_config: Path
+    resume_checkpoint: Path | None
 
 
 class _Streaming(TypedDict):
@@ -92,5 +94,9 @@ def load_config(path: Path | str):
     config["data"]["streaming"]["floor_image_data_dir"] = Path(
         config["data"]["streaming"]["floor_image_data_dir"]
     )
-
+    config["training"]["resume_checkpoint"] = (
+        Path(config["training"]["resume_checkpoint"])  # pyright: ignore [reportArgumentType]
+        if config["training"]["resume_checkpoint"] != ""
+        else None
+    )
     return config

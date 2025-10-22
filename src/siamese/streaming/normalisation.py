@@ -17,6 +17,7 @@ class AdaptiveNormalisation:
         self.std = initial_std.clone().to(device)
         self.momentum = momentum
         self.n_samples = 0
+        self.device = device
 
     def __call__(self, batch: torch.Tensor, *, update: bool = True):
         # Normalise with current statistics
@@ -53,9 +54,11 @@ class AdaptiveNormalisation:
         }
 
     def load_state_dict(self, state_dict: dict):
-        self.mean = state_dict["mean"]
-        self.std = state_dict["std"]
+        self.mean = state_dict["mean"].to(self.device)
+        self.std = state_dict["std"].to(self.device)
         self.momentum = state_dict["momentum"]
+        # TODO remove fix when not needed
+        state_dict["n_samples"] = state_dict["n_sampels"]
         self.n_samples = state_dict["n_samples"]
 
 
