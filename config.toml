@@ -38,17 +38,17 @@ max_scale = 0.125
 flip = true
 
 [data]
-shoeprint_val_dir = "~/Development/Doctorate/siamese/data/Shoeprints/val/"
-shoemark_val_dir = "~/Development/Doctorate/siamese/data/Shoemarks/val/"
-wvu_data_dir = "~/Development/Doctorate/siamese/data/Testing/WVU2019/"
-fid_data_dir = "~/Development/Doctorate/siamese/data/Testing/FID-300/Shoeprints/"
+val_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/val/"
+test_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/test/"
+wvu_data_dir = "~/Development/Doctorate/siamese/data/Testing/FIXME"
+fid_data_dir = "~/Development/Doctorate/siamese/data/Testing/FIXME"
 image_size = [512, 256]
 
 
 [data.streaming]
-floor_image_data_dir = "~/Development/Doctorate/siamese/data/flooring/"
-shoeprint_data_dir = "~/Development/Doctorate/siamese/data/Streaming/Shoeprints/"
-shoemark_data_dir = "~/Development/Doctorate/siamese/data/Streaming/Shoemarks/"
+floor_image_data_dir = "~/Vault/University/Doctorate/Data/Flooring/val"
+shoeprint_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoeprints/val"
+shoemark_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoemarks/val"
 min_floor_roi_height = 512
 synthetic_ratio = 0.5
 
