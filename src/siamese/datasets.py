@@ -17,8 +17,12 @@ _to_tensor = transforms.Compose(
 
 def get_id(path: Path):
     """Get the class ID of a shoeprint or shoemark file."""
-    split_str = path.stem.split("_")[:-1]
-    return "".join(split_str)
+    split_str = path.stem.split("_")
+
+    if len(split_str) == 3:
+        split_str = split_str[:-1]
+
+    return "_".join(split_str)
 
 
 def find_all_images(path: Path):

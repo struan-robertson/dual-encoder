@@ -171,7 +171,7 @@ val_dataset = LabeledCombinedDataset(
     config["data"]["val_dir"] / "Shoemarks",
 )
 
-# ** testing
+# ** Testing
 
 test_dataset = LabeledCombinedDataset(
     config["data"]["test_dir"] / "Shoeprints", config["data"]["test_dir"] / "Shoemarks"
