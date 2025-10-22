@@ -7,12 +7,11 @@ from enum import IntEnum, auto
 from pathlib import Path
 
 import torch
-import torchvision.transforms.v2.functional as F
+import torchvision.transforms.v2 as transforms
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision.transforms.v2 import InterpolationMode
 
-from siamese.datasets import find_all_images
+from siamese.datasets import _to_tensor, find_all_images, get_id
 
 
 class ShoemarkImpressionType(IntEnum):
@@ -43,7 +42,7 @@ class StreamingDataset(Dataset):
         min_floor_roi_height: int,
         synthetic_ratio: float,
         *,
-        val: bool = False,
+        labelled: bool = False,
     ):
         #  / "train" # Streaming is only used for training
         shoeprint_path = Path(shoeprint_path).expanduser()
@@ -57,10 +56,9 @@ class StreamingDataset(Dataset):
             _260 = torch.rot90(image, 3, dims=[-2, -1])
             return _0, _90, _180, _260
 
-        floor_path = floor_path / "val" if val else floor_path / "train"
         floor_files = find_all_images(floor_path)
         floor_tensors = [
-            F.to_tensor(Image.open(floor_path).convert("RGB"))
+            _to_tensor(Image.open(floor_path).convert("RGB"))
             for floor_path in floor_files
         ]
         self.floor_tensors = [
@@ -70,9 +68,9 @@ class StreamingDataset(Dataset):
         self.shoeprint_tensors = defaultdict(list)
         shoeprint_files = find_all_images(shoeprint_path)
         for f in shoeprint_files:
-            class_id = int(f.stem.split("_")[0])
+            class_id = get_id(f)
             self.shoeprint_tensors[class_id].append(
-                F.to_tensor(Image.open(f).convert("RGB"))
+                _to_tensor(Image.open(f).convert("RGB"))
             )
         self.shoeprint_classes = list(self.shoeprint_tensors.keys())
 
@@ -82,10 +80,10 @@ class StreamingDataset(Dataset):
             files: list[Path], impression_type: ShoemarkImpressionType
         ):
             for f in files:
-                class_id = int(f.stem.split("_")[0])
+                class_id = get_id(f)
                 self.shoemark_tensors[class_id].append(
                     ShoemarkImpression(
-                        F.to_tensor(Image.open(f).convert("RGB")), impression_type
+                        _to_tensor(Image.open(f).convert("RGB")), impression_type
                     )
                 )
 
@@ -99,7 +97,7 @@ class StreamingDataset(Dataset):
         self.image_size = image_size
         self.min_floor_roi_height = min_floor_roi_height
         self.synthetic_ratio = synthetic_ratio
-        self.val = val
+        self.labelled = labelled
 
     def __len__(self):
         return len(self.shoeprint_classes)
@@ -132,7 +130,7 @@ class StreamingDataset(Dataset):
         ):
             raise ValueError
 
-        if self.val:
+        if self.labelled:
             return (
                 shoeprint_image,
                 shoeprint_gen_image,
@@ -175,9 +173,9 @@ class StreamingDataset(Dataset):
 
         # Scale to 512x256
         # Use cheap interpolation and no antialias as we are scaling down
-        return F.resize(
+        return transforms.functional.resize(
             roi,
             size=self.image_size,  # pyright: ignore [reportArgumentType]
-            interpolation=InterpolationMode.NEAREST,
+            interpolation=transforms.InterpolationMode.NEAREST,
             antialias=False,
         )

@@ -165,11 +165,15 @@ generator_handler = GeneratorHandler(gan_config, gan_device)
 # ** Validation
 
 val_dataset = LabeledCombinedDataset(
-    config["data"]["shoeprint_val_dir"],
-    config["data"]["shoemark_val_dir"],
+    config["data"]["val_dir"] / "Shoeprints",
+    config["data"]["val_dir"] / "Shoemarks",
 )
 
-# ** Testing
+# ** testing
+
+test_dataset = LabeledCombinedDataset(
+    config["data"]["test_dir"] / "Shoeprints", config["data"]["test_dir"] / "Shoemarks"
+)
 
 # wvu_dataset = LabeledCombinedDataset(
 #    "/home/struan/Vault/University/Doctorate/Data/Siamese/Testing/WVU2019/Shoeprints/",

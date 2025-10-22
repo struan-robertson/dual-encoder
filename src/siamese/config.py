@@ -1,9 +1,8 @@
 """Define typed config options."""
 
+import tomllib
 from pathlib import Path
 from typing import TypedDict
-
-import tomllib
 
 
 class _Hyperparameters(TypedDict):
@@ -53,13 +52,9 @@ class _Streaming(TypedDict):
 
 
 class _Data(TypedDict):
-    shoeprint_val_dir: Path
-    shoeprint_dataset_mean: tuple[float, float, float]
-    shoeprint_dataset_std: tuple[float, float, float]
-    shoemark_val_dir: Path
-    shoemark_dataset_mean: tuple[float, float, float]
-    shoemark_dataset_std: tuple[float, float, float]
     streaming: _Streaming
+    val_dir: Path
+    test_dir: Path
     wvu_data_dir: Path
     fid_data_dir: Path
     image_size: tuple[int, int]
@@ -86,8 +81,8 @@ def load_config(path: Path | str):
     config["data"]["streaming"]["shoemark_data_dir"] = Path(
         config["data"]["streaming"]["shoemark_data_dir"]
     )
-    config["data"]["shoeprint_val_dir"] = Path(config["data"]["shoeprint_val_dir"])
-    config["data"]["shoemark_val_dir"] = Path(config["data"]["shoemark_val_dir"])
+    config["data"]["val_dir"] = Path(config["data"]["val_dir"])
+    config["data"]["test_dir"] = Path(config["data"]["test_dir"])
     config["data"]["wvu_data_dir"] = Path(config["data"]["wvu_data_dir"])
     config["data"]["fid_data_dir"] = Path(config["data"]["fid_data_dir"])
     config["training"]["gan_config"] = Path(config["training"]["gan_config"])

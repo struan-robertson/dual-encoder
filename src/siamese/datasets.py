@@ -1,17 +1,24 @@
 """Load datasets using torch.utils.data.Dataset."""
 
-import random
 from collections import defaultdict
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import torch
-import torchvision.transforms.v2.functional as F
+import torchvision.transforms.v2 as transforms
 from PIL import Image
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-_dataset_mode = Literal["train", "test", "val", "aug_val"]
+_to_tensor = transforms.Compose(
+    [transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]
+)
+
+
+def get_id(path: Path):
+    """Get the class ID of a shoeprint or shoemark file."""
+    split_str = path.stem.split("_")[:-1]
+    return "".join(split_str)
 
 
 def find_all_images(path: Path):
@@ -60,7 +67,7 @@ class IndividualDataset(Dataset):
         file = self.files[idx]
         image = Image.open(file).convert("RGB")
 
-        return F.to_tensor(image), file
+        return _to_tensor(image), file
 
 
 class LabeledCombinedDataset(Dataset):
@@ -80,7 +87,7 @@ class LabeledCombinedDataset(Dataset):
         shoemark_classes = defaultdict(list)
 
         for f in shoemark_files:
-            class_id = int(f.stem.split("_")[0])
+            class_id = get_id(f)
             shoemark_classes[class_id].append(f)
 
         self.shoemark_classes = shoemark_classes
@@ -90,15 +97,15 @@ class LabeledCombinedDataset(Dataset):
 
     def __getitem__(self, idx: int):
         shoeprint = self.shoeprint_files[idx]
-        shoeprint_class = int(shoeprint.stem.split("_")[0])
+        shoeprint_class = get_id(shoeprint)
         shoeprint_image = Image.open(shoeprint).convert("RGB")
 
-        shoeprint_image = F.to_tensor(shoeprint_image)
+        shoeprint_image = _to_tensor(shoeprint_image)
 
         # For validation/testing we want to test all shoeprints for a shoemark
         shoemark_files = self.shoemark_classes[shoeprint_class]
         shoemark_images = tuple(
-            F.to_tensor(Image.open(f).convert("RGB")) for f in shoemark_files
+            _to_tensor(Image.open(f).convert("RGB")) for f in shoemark_files
         )
 
         return shoeprint_class, (shoeprint_image, shoemark_images)
