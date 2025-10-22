@@ -386,9 +386,9 @@ def training_loop():
                         "shoemark_model_state_dict": shoemark_model.state_dict(),
                         "shoeprint_optim_state_dict": shoeprint_optimizer.state_dict(),
                         "shoemark_optim_state_dict": shoemark_optimizer.state_dict(),
-                        "shoeprint_adaptive_norm_state_dict": shoeprint_adaptive_norm.state_dict(),
-                        "shoemark_adaptive_norm_state_dict": shoemark_adaptive_norm.state_dict(),
-                        "difficulty_scheduler_state_dict": difficulty_scheduler.state_dict(),
+                        "shoeprint_adaptive_norm_state_dict": shoeprint_adaptive_norm.state_dict(),  # noqa: E501
+                        "shoemark_adaptive_norm_state_dict": shoemark_adaptive_norm.state_dict(),  # noqa: E501
+                        "difficulty_scheduler_state_dict": difficulty_scheduler.state_dict(),  # noqa: E501
                     },
                     checkpoint_dir / f"siamese_{epoch}.tar",
                 )
@@ -483,7 +483,9 @@ def validate(
             ranks.append(rank)
             if move_failures and rank > k:
                 shutil.copy(
-                    config["data"]["shoemark_val_dir"] / f"{shoe_id}_{shoemark_id}.png",
+                    config["data"]["val_dir"]
+                    / "Shoemarks"
+                    / f"{shoe_id}_{shoemark_id}.png",
                     "failed_val/",
                 )
 
