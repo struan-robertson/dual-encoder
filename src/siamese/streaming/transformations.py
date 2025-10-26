@@ -117,6 +117,8 @@ class StreamingTransforms:
             p=1 / 3,
         )
 
+        self.invert = transforms.RandomInvert()
+
         # TODO specify in config
         self.photometric_transforms = transforms.Compose(
             [
@@ -197,8 +199,15 @@ def shoemark_pipeline(
     # Determine which need background substitution
     include_background = no_background_shoemarks.std(dim=(1, 2, 3)) > 0.08
 
-    # Randomly apply pre blend transforms
-    pre_blend_transformed = torch.rand(no_background_shoemarks.shape[0]) > 0.5
+    # Randomly invert dust shoemarks
+    no_background_shoemarks[~include_background] = streaming_transform.invert(
+        no_background_shoemarks[~include_background]
+    )
+
+    # Randomly apply pre blend transforms (excluding dust)
+    pre_blend_transformed = (
+        torch.rand(no_background_shoemarks.shape[0]) > 0.5
+    ) & ~include_background
     pre_blend_mask = torch.zeros(shoemarks.size(0), dtype=torch.bool, device=device)
     pre_blend_mask[combined_indices[pre_blend_transformed]] = True
 
