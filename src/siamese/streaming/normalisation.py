@@ -57,8 +57,6 @@ class AdaptiveNormalisation:
         self.mean = state_dict["mean"].to(self.device)
         self.std = state_dict["std"].to(self.device)
         self.momentum = state_dict["momentum"]
-        # TODO remove fix when not needed
-        state_dict["n_samples"] = state_dict["n_sampels"]
         self.n_samples = state_dict["n_samples"]
 
 
