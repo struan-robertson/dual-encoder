@@ -13,6 +13,7 @@ dependencies = [
     "pytorch-triton-rocm",
     "tqdm>=4.67.1",
     "one-to-many-gan>=0.1.0",
+    "scikit-learn>=1.7.2",
 ]
 
 [tool.uv.sources]
