@@ -206,7 +206,7 @@ def shoemark_pipeline(
 
     # Randomly apply pre blend transforms (excluding dust)
     pre_blend_transformed = (
-        torch.rand(no_background_shoemarks.shape[0]) > 0.5
+        torch.rand(no_background_shoemarks.shape[0], device=device) > 0.5
     ) & ~include_background
     pre_blend_mask = torch.zeros(shoemarks.size(0), dtype=torch.bool, device=device)
     pre_blend_mask[combined_indices[pre_blend_transformed]] = True
