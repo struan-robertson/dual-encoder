@@ -496,8 +496,9 @@ def validate(
     return np.mean(ranks <= k)
 
 
+# TODO this really doesn't belong in the file for training
 def validate_all_checkpoints(
-    p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path
+    p: int = 5, *, dataset: LabeledCombinedDataset, checkpoint_dir: Path | str
 ):
     """Validate all checkpoints in a direcory."""
     checkpoint_dir = Path(checkpoint_dir)
