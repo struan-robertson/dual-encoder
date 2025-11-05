@@ -9,7 +9,7 @@ from siamese.streaming import ShoemarkImpressionType
 
 
 class RandomCropAndPad:
-    """Randomly crop a batch of tensors and then scale and pad back to original shape."""
+    """Randomly crop a batch of tensors and then scale & pad back to original shape."""
 
     def __init__(
         self, fill: float = 0.0, min_edge: int = 64, size: tuple[int, int] = (512, 256)
@@ -260,8 +260,8 @@ def shoemark_pipeline(
     # Sort by original index and stack
     result_pairs.sort(key=lambda x: x[0])
 
-    # We need to know which shoemarks have been pre-blend transformed as pre/post blending
-    # transformations are mutually exclusive
+    # We need to know which shoemarks have been pre-blend transformed as
+    # pre/post blending transformations are mutually exclusive
 
     result_indices = torch.tensor([idx for idx, _ in result_pairs], device=device)
     sorted_pre_blended = pre_blend_mask[result_indices]
