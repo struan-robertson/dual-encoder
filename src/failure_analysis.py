@@ -42,15 +42,13 @@ def main():
 
     config = load_config(args.config)
     device = torch.device(
-        f"cuda:{config['training']['gpu_number']}"
-        if torch.cuda.is_available()
-        else "cpu"
+        f"cuda:{config.training.gpu_number}" if torch.cuda.is_available() else "cpu"
     )
 
     data_dir = {
-        "wvu": config["data"]["wvu_data_dir"],
-        "test": config["data"]["test_dir"],
-        "val": config["data"]["val_dir"],
+        "wvu": config.data.wvu_data_dir,
+        "test": config.data.test_dir,
+        "val": config.data.val_dir,
     }[args.dataset]
     dataset = LabeledCombinedDataset(data_dir / "Shoeprints", data_dir / "Shoemarks")
 
@@ -89,7 +87,7 @@ def main():
 
     class_idxs = list(print_embeddings.keys())
     gallery = torch.stack(list(print_embeddings.values()))
-    p_val = config["hyperparameters"]["p_val"]
+    p_val = config.hyperparameters.p_val
     k = math.ceil(len(gallery) * args.p / 100)
     print("%d gallery prints, %d query classes, failure = rank >= %d (top %d%%)"
           % (len(gallery), len(mark_embeddings), k, args.p))

@@ -28,21 +28,17 @@ output_path = Path(
 )
 output_path.mkdir(exist_ok=True)
 
-config = (
-    load_config("../config.toml")
-    if len(sys.argv) < 2 or sys.argv[1] == "" or sys.argv[1] == "-i"
-    else load_config(sys.argv[1])
-)
+config = load_config(sys.argv[1] if len(sys.argv) > 1 else "../config.toml")
 
 device = torch.device(
-    f"cuda:{config['training']['gpu_number']}" if torch.cuda.is_available() else "cpu"
+    f"cuda:{config.training.gpu_number}" if torch.cuda.is_available() else "cpu"
 )
 
 shoeprint_model = SharedSiamese(
-    embedding_size=config["hyperparameters"]["embedding_size"],
-    pre_trained=config["training"]["pre_training"]["pre_trained"],
-    refreeze=config["training"]["pre_training"]["refreeze"],
-    permafrost=config["training"]["pre_training"]["permafrost"],
+    embedding_size=config.hyperparameters.embedding_size,
+    pre_trained=config.training.pre_training.pre_trained,
+    refreeze=config.training.pre_training.refreeze,
+    permafrost=config.training.pre_training.permafrost,
 ).to(device)
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])

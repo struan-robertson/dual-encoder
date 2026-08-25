@@ -9,8 +9,6 @@ import torchvision.transforms.v2.functional as F
 from siamese.streaming import ShoemarkImpressionType
 
 if TYPE_CHECKING:
-    from one_to_many_gan import GeneratorHandler
-
     from siamese.config import Augmentations
 
 
@@ -190,8 +188,6 @@ def shoemark_pipeline(
     shoemark_type_mask: torch.Tensor,
     streaming_transform: "StreamingTransforms",
     device,
-    generator_handler: "GeneratorHandler | None" = None,
-    difficulty: float = 1.0,
     synthetic_pool: bool = False,
 ):
     """Handle the creation of shoemarks for a batch of shoeprints."""
@@ -216,19 +212,12 @@ def shoemark_pipeline(
     if len(no_shoemark_shoeprints) > 0:
         if synthetic_pool:
             # Pre-generated marks streamed from disk by the dataset in [0, 1];
-            # map back to the generator's tanh range so downstream treatment
-            # matches in-loop generation exactly
+            # map back to the generator's tanh range (all synthetic marks are
+            # pooled -- in-loop generation was removed with the restructure)
             generated_shoemarks = shoemarks[no_shoemark_mask] * 2.0 - 1.0
-        elif generator_handler is not None:
-            # Generate shoemarks using shoeprints
-            generated_shoemarks = generator_handler.generate(
-                F.rgb_to_grayscale(no_shoemark_shoeprints),
-                difficulty=difficulty,
-                normalised=False,
-            )
         else:
-            # No GAN: use shoeprints directly, converted to grayscale to match
-            # the format the GAN would produce
+            # No generator: use shoeprints directly, converted to grayscale to
+            # match the format the pooled marks would have
             generated_shoemarks = F.rgb_to_grayscale(no_shoemark_shoeprints)
 
         b, _, h, w = generated_shoemarks.shape
@@ -334,8 +323,6 @@ def augment_batch(
     shoemark_type_mask: torch.Tensor,
     streaming_transform: "StreamingTransforms",
     device,
-    generator_handler: "GeneratorHandler | None" = None,
-    difficulty: float = 1.0,
     synthetic_pool: bool = False,
 ):
     """Run the full augmentation pipeline on a batch.
@@ -351,8 +338,6 @@ def augment_batch(
         shoemark_type_mask,
         streaming_transform=streaming_transform,
         device=device,
-        generator_handler=generator_handler,
-        difficulty=difficulty,
         synthetic_pool=synthetic_pool,
     )
 

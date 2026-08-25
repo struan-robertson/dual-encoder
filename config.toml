@@ -23,13 +23,9 @@ defrost = 0 # When to start layer unfreezing
 permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
-[gan]
-enabled = true # When disabled, grayscale shoeprints are used in place of generated shoemarks
+[curriculum]
 # "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml
 # (checkpoint = [experiment] name + [test] epoch there; difficulty is ignored)
-backend = "one_to_many_gan"
-compile = true # Compile the generator with torch.compile (dynamic batch size)
-config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
 initial_difficulty = 0.2
 max_difficulty = 1.0
 peak_steps = 2_500

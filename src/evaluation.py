@@ -192,15 +192,13 @@ if __name__ == "__main__":
     config = load_config(args.config)
 
     device = torch.device(
-        f"cuda:{config['training']['gpu_number']}"
-        if torch.cuda.is_available()
-        else "cpu"
+        f"cuda:{config.training.gpu_number}" if torch.cuda.is_available() else "cpu"
     )
 
     data_dir = {
-        "wvu": config["data"]["wvu_data_dir"],
-        "test": config["data"]["test_dir"],
-        "val": config["data"]["val_dir"],
+        "wvu": config.data.wvu_data_dir,
+        "test": config.data.test_dir,
+        "val": config.data.val_dir,
     }[args.dataset]
 
     dataset = LabeledCombinedDataset(
@@ -213,6 +211,6 @@ if __name__ == "__main__":
         checkpoint_dir=args.checkpoint_dir,
         device=device,
         p=args.p,
-        p_val=config["hyperparameters"]["p_val"],
+        p_val=config.hyperparameters.p_val,
         log_name=args.log_name or f"siamese_{args.dataset}.log",
     )

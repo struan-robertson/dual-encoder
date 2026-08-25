@@ -30,7 +30,7 @@ gradient_checkpointing = true # Recompute stage activations in backward so
                               # deep@96 fits locally; BN running stats see
                               # doubled updates (see SharedSiamese.forward)
 
-[gan]
+[curriculum]
 # Final-configuration run (dual_encoder.tex, schedule-ablation summary):
 # deep ladder + batch 96 + difficulty curriculum + longer cosine horizon,
 # combined outside the controlled ablations. Pooled protocol: marks
@@ -38,11 +38,7 @@ gradient_checkpointing = true # Recompute stage activations in backward so
 # best-FID checkpoint (new_data_partition_fid_1/models/20000.tar, the same
 # checkpoint as the campaign's gan_full_1 row) at N=106 per class (that run's
 # coverage-derived N), one tree per difficulty in {0.2..0.9, 1.0}
-enabled = false
-pool_curriculum = true
-backend = "one_to_many_gan"
-compile = true
-config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
+enabled = true
 initial_difficulty = 0.2
 max_difficulty = 1.0
 # Ramp reaches 1.0 at epoch 3000 (0.2 + n/3750): the deep ladder completes at

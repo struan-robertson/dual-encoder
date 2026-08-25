@@ -28,17 +28,13 @@ defrost = 0 # When to start layer unfreezing
 permafrost = 2 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
-[gan]
+[curriculum]
 # Pooled protocol: marks pre-generated with generate_pool.py --backend gan from
 # the best-FID checkpoint ([inference].checkpoint in the GAN config) and
 # streamed from synthetic_shoemark_data_dir below; no in-loop generation.
 # pool_curriculum draws from difficulty-stratified pool trees (train_d0.2 etc.)
 # following the difficulty schedule — the curriculum arm of the A/B test
 enabled = false
-pool_curriculum = false
-backend = "one_to_many_gan"
-compile = true # Compile the generator with torch.compile (dynamic batch size)
-config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
 initial_difficulty = 0.2
 max_difficulty = 1.0
 peak_steps = 2_500
