@@ -18,12 +18,11 @@ Because torch comes from an extra, pass the same one when running, otherwise
 =uv run= resolves an environment without it:
 
 #+begin_src sh
-uv run --extra cuda python src/training.py
-uv run --no-sync python src/training.py   # use the environment as it stands
+uv run --extra cuda python src/training.py final_combined.toml
+uv run --no-sync python src/training.py final_combined.toml
 #+end_src
 
-=campaign_runner.py= uses =--no-sync= for the commands it starts, so prepare the
-environment before running a campaign.
+The examples below leave the extra out for brevity; add the one installed.
 
 * Configuration
 
@@ -46,27 +45,15 @@ UNSB repository, then streamed from disk. The pool directory is set by
 enabled, sibling directories named =<pool>_d<level>= supply marks at each
 difficulty level.
 
-* Campaigns
-
-=campaign_runner.py= runs a queue of jobs defined in a TOML file, generating
-each job's pool, training it, and evaluating the best checkpoint.
-
-#+begin_src sh
-uv run python campaign_runner.py campaign_dual_encoder_local.toml
-#+end_src
-
-Each job names a generator backend, its configuration, and any per-job option
-overrides. Per-job configurations and results are written to =campaign/= and are
-not tracked.
-
 * Evaluation
 
 #+begin_src sh
-uv run python src/evaluation.py checkpoints/<run>/best --dataset test -p 5
-uv run python src/failure_analysis.py checkpoints/<run>/best/<checkpoint>.tar --dataset wvu
+uv run python src/evaluation.py checkpoints/<run> --dataset test -p 5
+uv run python src/failure_analysis.py checkpoints/<run>/siamese_<epoch>.tar --dataset wvu
 #+end_src
 
-=evaluation.py= reports the proportion of query shoemarks whose correct
-shoeprint ranks within the top p percent of the gallery. =failure_analysis.py=
-collects the queries that fall outside that threshold, writing each with its
-correct and incorrectly matched shoeprints for inspection.
+=evaluation.py= scores every checkpoint in a directory, reporting the
+proportion of query shoemarks whose correct shoeprint ranks within the top p
+percent of the gallery. =failure_analysis.py= collects the queries that fall
+outside that threshold, writing each with its correct and incorrectly matched
+shoeprints for inspection.
