@@ -90,7 +90,7 @@ labels = dbscan.fit_predict(shoeprint_vectors_norm)
 # Print clustering statistics
 n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
 n_noise = list(labels).count(-1)
-print(f"\nClustering complete!")
+print("\nClustering complete!")
 print(f"Number of clusters: {n_clusters}")
 print(f"Number of noise points: {n_noise}")
 

@@ -3,6 +3,7 @@
 import torch
 import torchvision
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 
 class SharedSiamese(nn.Module):
@@ -16,6 +17,7 @@ class SharedSiamese(nn.Module):
         frozen: bool = True,
         refreeze: bool = False,
         permafrost: int = 0,
+        gradient_checkpointing: bool = False,
     ):
         super().__init__()
 
@@ -35,13 +37,13 @@ class SharedSiamese(nn.Module):
                 param.requires_grad = False
         self.permafrost = permafrost
         self.refreeze = refreeze
+        self.gradient_checkpointing = gradient_checkpointing
 
         self.model = model
+        self.last_frozen = 1
 
         if pre_trained:
             self.unfreeze_idx(0)
-
-            self.last_frozen = 1
 
     def unfreeze_next(self):
         self.unfreeze_idx(self.last_frozen)
@@ -71,9 +73,24 @@ class SharedSiamese(nn.Module):
     def unfreeze_to(self, idx: int):
         for i in range(idx):
             self.unfreeze_idx(i)
+        # Keep the unfreeze_next() cursor consistent so a resumed run
+        # continues the ladder instead of replaying it from layer4
+        self.last_frozen = max(self.last_frozen, idx)
 
     def forward(self, x):
-        return self.model(x)
+        if not (self.gradient_checkpointing and self.training):
+            return self.model(x)
+        # Checkpoint each ResNet stage so the deep ladder fits at batch 96 on
+        # the 24 GB card: activations are recomputed during backward instead of
+        # held. Note the recompute runs each stage's BatchNorms a second time
+        # per step, so running stats see doubled updates relative to an
+        # uncheckpointed run.
+        m = self.model
+        x = m.maxpool(m.relu(m.bn1(m.conv1(x))))
+        for layer in (m.layer1, m.layer2, m.layer3, m.layer4):
+            x = checkpoint(layer, x, use_reentrant=False)
+        x = torch.flatten(m.avgpool(x), 1)
+        return m.fc(x)
 
     def init_weights(self, m):
         if isinstance(m, nn.Linear):

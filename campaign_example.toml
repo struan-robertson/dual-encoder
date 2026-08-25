@@ -1,0 +1,42 @@
+# Campaign queue for one GPU — copy per runner instance (campaign_gpu0.toml,
+# campaign_a40_0.toml, ...) and run:
+#
+#     uv run python campaign_runner.py campaign_gpu0.toml
+#
+# Paths are per-machine: point the repo/checkpoint/data keys at wherever this
+# box actually keeps them (see campaign_a40_*.toml for a non-mirrored layout,
+# with a template variant carrying that box's [data] paths).
+#
+# Pools are TRANSIENT: each runner owns <pool_root>/active_gpu<N> and the next
+# job overwrites it (generation is seeded — a wiped pool regenerates
+# bit-identically). Point pool_root at a fast disk and train from it directly;
+# train_root (an rsync replica) only exists for hosts whose fast disk cannot
+# also absorb generation writes.
+
+[campaign]
+gpu = 0                 # exported as {CUDA,HIP}_VISIBLE_DEVICES for every stage
+template = "gan_pool_permafrost2_b96.toml"  # the locked protocol
+# Pool size is computed PER RUN by style_coverage.py (cached in
+# <pool_root>/n_styles/<name>.txt, which persists across pool overwrites):
+# the coverage criterion is the fixed part of the protocol, N is wherever
+# each run's style distribution meets it.
+# Add n_styles = <int> to a [[job]] to pin it manually instead.
+unsb_repo = "~/Development/Doctorate/diffusion/UNSB"
+pool_root = "~/Development/Doctorate/synthetic/campaign"
+# train_root = "/fast/disk/campaign"  # only if pool_root must stay off the fast disk
+# print_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoeprints/train"
+
+# GAN rows: pin the best-per-seed checkpoint (.tar) of each ablation run
+[[job]]
+name = "gan_no_style_s0"
+backend = "gan"
+generator_config = "~/Development/Doctorate/one_to_many_gan/implementation/config.toml"
+checkpoint = "~/Development/Doctorate/one_to_many_gan/implementation/checkpoints/no_style_s0/models/47500.tar"
+
+# UNSB rows: pin the experiment name + best-per-seed epoch
+[[job]]
+name = "unsb_full_s0"
+backend = "unsb"
+generator_config = "~/Development/Doctorate/diffusion/UNSB/config.toml"
+experiment = "v2_seed0"
+epoch = 54

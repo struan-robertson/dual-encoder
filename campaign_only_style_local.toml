@@ -1,0 +1,16 @@
+# Single-job queue: the only_style ablation row, seed 1, on the local GPU.
+# Checkpoint pinned from the seeded sweep (best FID 75.4 at step 45,000).
+#
+#     uv run python campaign_runner.py campaign_only_style_local.toml
+
+[campaign]
+gpu = 0
+template = "gan_pool_permafrost2_b96.toml"
+unsb_repo = "~/Development/Doctorate/diffusion/UNSB"
+pool_root = "~/Development/Doctorate/synthetic/campaign"
+
+[[job]]
+name = "gan_only_style_1"
+backend = "gan"
+generator_config = "~/Development/Doctorate/one_to_many_gan/implementation/config.toml"
+checkpoint = "~/Development/Doctorate/one_to_many_gan/implementation/checkpoints/only_style_1/models/45000.tar"

@@ -1,3 +1,5 @@
 /checkpoints/
 *.pyc
 /data/
+/.agent-shell/
+/checkpoints

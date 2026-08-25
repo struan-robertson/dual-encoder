@@ -1,0 +1,40 @@
+# Frozen-style UNSB rows: each full-model best checkpoint rendered with one
+# seeded style per shoeprint class (--frozen-style), so only trajectory noise
+# varies. Pool sizes match each seed's full-model pool (N at <=1.1x floor from
+# style_coverage_unsb_full_{1,2,3}.csv: 192/192/128) so dataset size is held
+# constant and diversity is the only difference.
+#
+#     uv run python campaign_runner.py campaign_unsb_frozen_local.toml
+
+[campaign]
+gpu = 0
+template = "gan_pool_permafrost2_b96.toml"
+unsb_repo = "~/Development/Doctorate/diffusion/UNSB"
+pool_root = "~/Development/Doctorate/synthetic/campaign"
+
+[[job]]
+name = "unsb_frozen_style_1"
+backend = "unsb"
+generator_config = "~/Development/Doctorate/diffusion/UNSB/config.toml"
+experiment = "shoeprint_unsb_v2_1"
+epoch = 54
+n_styles = 192
+frozen_style = true
+
+[[job]]
+name = "unsb_frozen_style_2"
+backend = "unsb"
+generator_config = "~/Development/Doctorate/diffusion/UNSB/config.toml"
+experiment = "shoeprint_unsb_v2_2"
+epoch = 44
+n_styles = 192
+frozen_style = true
+
+[[job]]
+name = "unsb_frozen_style_3"
+backend = "unsb"
+generator_config = "~/Development/Doctorate/diffusion/UNSB/config.toml"
+experiment = "shoeprint_unsb_v2_3"
+epoch = 36
+n_styles = 128
+frozen_style = true

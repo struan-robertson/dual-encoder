@@ -13,13 +13,6 @@ class _Hyperparameters(TypedDict):
     triplet_swapping: bool
 
 
-class _Augmentation(TypedDict):
-    max_translation: tuple[int, int]
-    max_rotation: int
-    max_scale: float
-    flip: bool
-
-
 class _PreTraining(TypedDict):
     pre_trained: bool
     frozen: bool
@@ -27,6 +20,7 @@ class _PreTraining(TypedDict):
     defrost: int
     permafrost: int
     refreeze: bool
+    gradient_checkpointing: bool
 
 
 class _Training(TypedDict):
@@ -37,18 +31,91 @@ class _Training(TypedDict):
     name: str
     gpu_number: int
     pre_training: _PreTraining
-    shoemark_augmentation: _Augmentation
-    shoeprint_augmentation: _Augmentation
-    gan_config: Path
     resume_checkpoint: Path | None
+
+
+class _Gan(TypedDict):
+    enabled: bool
+    backend: str
+    compile: bool
+    pool_curriculum: bool
+    config: Path
+    initial_difficulty: float
+    max_difficulty: float
+    peak_steps: int
+
+
+class _AffineAugmentation(TypedDict):
+    enabled: bool
+    flip: bool
+    degrees: int
+    translate: tuple[float, float]
+    scale: tuple[float, float]
+    shear: float
+    fill: float
+
+
+class _BackgroundSubstitution(TypedDict):
+    enabled: bool
+
+
+class _DustInvert(TypedDict):
+    enabled: bool
+
+
+class _BlueShift(TypedDict):
+    enabled: bool
+    p: float
+    max_shift: float
+
+
+class _PreBlendErasing(TypedDict):
+    enabled: bool
+    p: float
+    min_scale: float
+    max_scale: float
+    fill: float
+
+
+class _PostBlendCrop(TypedDict):
+    enabled: bool
+    p: float
+    min_edge: int
+    fill: float
+
+
+class _Photometric(TypedDict):
+    enabled: bool
+    blur_kernel: tuple[int, int]
+    blur_sigma: tuple[float, float]
+    sharpness_factor: float
+    jitter_p: float
+    brightness: float
+    hue: float
+
+
+class Augmentations(TypedDict):
+    """Per-augmentation toggles and strengths."""
+
+    shoeprint_affine: _AffineAugmentation
+    shoemark_affine: _AffineAugmentation
+    shoemark_back_affine: _AffineAugmentation
+    background_substitution: _BackgroundSubstitution
+    dust_invert: _DustInvert
+    blue_shift: _BlueShift
+    pre_blend_erasing: _PreBlendErasing
+    post_blend_crop: _PostBlendCrop
+    photometric: _Photometric
 
 
 class _Streaming(TypedDict):
     floor_image_data_dir: Path
     shoeprint_data_dir: Path
     shoemark_data_dir: Path
+    synthetic_shoemark_data_dir: Path | None
     min_floor_roi_height: int
     synthetic_ratio: float
+    real_pairs_only: bool
 
 
 class _Data(TypedDict):
@@ -65,6 +132,8 @@ class Config(TypedDict):
 
     hyperparameters: _Hyperparameters
     training: _Training
+    gan: _Gan
+    augmentations: Augmentations
     data: _Data
 
 
@@ -85,7 +154,16 @@ def load_config(path: Path | str):
     config["data"]["test_dir"] = Path(config["data"]["test_dir"])
     config["data"]["wvu_data_dir"] = Path(config["data"]["wvu_data_dir"])
     config["data"]["fid_data_dir"] = Path(config["data"]["fid_data_dir"])
-    config["training"]["gan_config"] = Path(config["training"]["gan_config"])
+    config["gan"]["config"] = Path(config["gan"]["config"])
+    config["gan"].setdefault("backend", "one_to_many_gan")
+    config["gan"].setdefault("pool_curriculum", False)
+    config["data"]["streaming"].setdefault("real_pairs_only", False)
+    config["training"]["pre_training"].setdefault("gradient_checkpointing", False)
+    config["data"]["streaming"]["synthetic_shoemark_data_dir"] = (
+        Path(config["data"]["streaming"]["synthetic_shoemark_data_dir"])
+        if config["data"]["streaming"].get("synthetic_shoemark_data_dir")
+        else None
+    )
     config["data"]["streaming"]["floor_image_data_dir"] = Path(
         config["data"]["streaming"]["floor_image_data_dir"]
     )

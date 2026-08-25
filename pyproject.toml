@@ -8,29 +8,36 @@ dependencies = [
     "matplotlib>=3.10.1",
     "numpy>=2.2.3",
     "pillow>=11.1.0",
-    "torch>=2.7.0",
-    "torchvision>=0.22.0",
-    "pytorch-triton-rocm",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "pytorch-triton-rocm>=3.5.1 ; sys_platform == 'linux'",
+    "triton-rocm>=3.6.0 ; sys_platform == 'linux'",
     "tqdm>=4.67.1",
     "one-to-many-gan>=0.1.0",
     "scikit-learn>=1.7.2",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv.sources]
 one-to-many-gan = { path = "../one_to_many_gan/implementation/", editable = true }
 torch = [
-  { index = "pytorch-rocm", marker = "sys_platform == 'linux'"},
+  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
 ]
 torchvision = [
   { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
 ]
+# ROCm support relies on both Triton packages, which should also be installed from
+# the PyTorch index (and included in `project.dependencies`).
 pytorch-triton-rocm = [
+  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
+]
+triton-rocm = [
   { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
 ]
 
 [[tool.uv.index]]
 name = "pytorch-rocm"
-url = "https://download.pytorch.org/whl/rocm6.4"
+url = "https://download.pytorch.org/whl/rocm7.2"
 explicit = true
 
 [dependency-groups]

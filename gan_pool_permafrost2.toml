@@ -1,7 +1,7 @@
 [hyperparameters]
 p_val = 2
 margin = 2
-batch_size = 96
+batch_size = 48 # Max that fits the 24 GB card at the full unfreeze ladder (peak 22.3 GiB; 52 hits the ceiling)
 embedding_size = 128
 triplet_swapping = true
 
@@ -11,22 +11,31 @@ epochs = 5_000
 gpu_number = 0
 print_iter = 100
 val_iter = 500
-name = "default"
+name = "gan_pool_permafrost2"
 resume_checkpoint = "" # Leave empty for no resuming
 
 [training.pre_training]
 pre_trained = true
 frozen = true
+# Ladder-depth ablation arm: identical to gan_pool.toml (same 500-epoch
+# cadence) except the ladder stops at fc+layer4+layer3 (complete by epoch
+# 1000; layer2/layer1 stay frozen). Isolates whether training the deep
+# backbone layers matters; compare S1 curves against the baseline directly.
+# This trainable set is also proven to fit batch 96 if the maxed-mining
+# branch of the decision tree is needed
 epoch_unfreeze = 500 # Number of epochs between layer unfreezes
 defrost = 0 # When to start layer unfreezing
-# TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
-permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
+permafrost = 2 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
 [gan]
-enabled = true # When disabled, grayscale shoeprints are used in place of generated shoemarks
-# "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml
-# (checkpoint = [experiment] name + [test] epoch there; difficulty is ignored)
+# Pooled protocol: marks pre-generated with generate_pool.py --backend gan from
+# the best-FID checkpoint ([inference].checkpoint in the GAN config) and
+# streamed from synthetic_shoemark_data_dir below; no in-loop generation.
+# pool_curriculum draws from difficulty-stratified pool trees (train_d0.2 etc.)
+# following the difficulty schedule — the curriculum arm of the A/B test
+enabled = false
+pool_curriculum = false
 backend = "one_to_many_gan"
 compile = true # Compile the generator with torch.compile (dynamic batch size)
 config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
@@ -114,5 +123,10 @@ image_size = [512, 256]
 floor_image_data_dir = "~/Vault/University/Doctorate/Data/Flooring/train"
 shoeprint_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoeprints/train"
 shoemark_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoemarks/train"
+# pre-generated GAN marks (generate_pool.py --backend gan); classes without a
+# real shoemark draw a random pool image instead of invoking the generator.
+# NVMe replica of the canonical ~/Extra tree: random reads from the HDD
+# saturate it (~240 IOPS) and the page cache can't hold the tree at batch 96
+synthetic_shoemark_data_dir = "~/Development/Doctorate/synthetic/Shoemarks_GAN/train"
 min_floor_roi_height = 512
 synthetic_ratio = 0.5

@@ -1,7 +1,7 @@
 [hyperparameters]
 p_val = 2
 margin = 2
-batch_size = 96
+batch_size = 45
 embedding_size = 128
 triplet_swapping = true
 
@@ -11,23 +11,20 @@ epochs = 5_000
 gpu_number = 0
 print_iter = 100
 val_iter = 500
-name = "default"
+name = "no_gan_no_photo"
 resume_checkpoint = "" # Leave empty for no resuming
 
 [training.pre_training]
 pre_trained = true
 frozen = true
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
+epoch_unfreeze = 2000 # Number of epochs between layer unfreezes
 defrost = 0 # When to start layer unfreezing
 # TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
 permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
 [gan]
-enabled = true # When disabled, grayscale shoeprints are used in place of generated shoemarks
-# "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml
-# (checkpoint = [experiment] name + [test] epoch there; difficulty is ignored)
-backend = "one_to_many_gan"
+enabled = false # When disabled, grayscale shoeprints are used in place of generated shoemarks
 compile = true # Compile the generator with torch.compile (dynamic batch size)
 config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
 initial_difficulty = 0.2
@@ -95,7 +92,7 @@ fill = 0.0
 
 # Blur/sharpness and colour jitter applied to shoemarks without a pre-existing background
 [augmentations.photometric]
-enabled = true
+enabled = false
 blur_kernel = [5, 9]
 blur_sigma = [0.1, 5.0]
 sharpness_factor = 2
@@ -104,9 +101,9 @@ brightness = 0.4
 hue = 0.2
 
 [data]
-val_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/no_synth/val/"
-test_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/no_synth/test/"
-wvu_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/wvu/cropped/"
+val_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/val/"
+test_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/test/"
+wvu_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/wvu/cropped_unenhanced/"
 fid_data_dir = "~/Development/Doctorate/siamese/data/Testing/FIXME"
 image_size = [512, 256]
 

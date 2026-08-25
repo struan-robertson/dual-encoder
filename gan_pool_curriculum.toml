@@ -1,7 +1,7 @@
 [hyperparameters]
 p_val = 2
 margin = 2
-batch_size = 96
+batch_size = 96 # Winner of the ladder-depth/mining ablation: permafrost2@96 tied full-ladder@48 on val S1 at ~2.5x less cost; fits because the permafrost2 trainable set (fc+layer4+layer3) stays under the 24 GB ceiling
 embedding_size = 128
 triplet_swapping = true
 
@@ -11,28 +11,36 @@ epochs = 5_000
 gpu_number = 0
 print_iter = 100
 val_iter = 500
-name = "default"
+name = "gan_pool_curriculum"
 resume_checkpoint = "" # Leave empty for no resuming
 
 [training.pre_training]
 pre_trained = true
 frozen = true
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
+epoch_unfreeze = 500 # Number of epochs between layer unfreezes (see gan_pool.toml)
 defrost = 0 # When to start layer unfreezing
 # TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
-permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
+permafrost = 2 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
 [gan]
-enabled = true # When disabled, grayscale shoeprints are used in place of generated shoemarks
-# "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml
-# (checkpoint = [experiment] name + [test] epoch there; difficulty is ignored)
+# Pooled protocol: marks pre-generated with generate_pool.py --backend gan from
+# the best-FID checkpoint ([inference].checkpoint in the GAN config) and
+# streamed from synthetic_shoemark_data_dir below; no in-loop generation.
+# pool_curriculum draws from difficulty-stratified pool trees (train_d0.2 etc.)
+# following the difficulty schedule — the curriculum arm of the A/B test
+enabled = false
+pool_curriculum = true
 backend = "one_to_many_gan"
 compile = true # Compile the generator with torch.compile (dynamic batch size)
 config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
 initial_difficulty = 0.2
 max_difficulty = 1.0
-peak_steps = 2_500
+# Ramp reaches 1.0 at epoch 3000 (0.2 + n/3750): the permafrost2 ladder
+# completes at 1000, so the whole plastic phase sits inside the ramp and full
+# difficulty arrives only once all trainable layers are settled. Stepped once
+# per epoch, so batch size does not affect the timing.
+peak_steps = 3_750
 
 # Affine transform applied to shoeprints
 [augmentations.shoeprint_affine]
@@ -114,5 +122,10 @@ image_size = [512, 256]
 floor_image_data_dir = "~/Vault/University/Doctorate/Data/Flooring/train"
 shoeprint_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoeprints/train"
 shoemark_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoemarks/train"
+# pre-generated GAN marks (generate_pool.py --backend gan); classes without a
+# real shoemark draw a random pool image instead of invoking the generator
+# NVMe replica of the canonical ~/Extra trees (base + _d* siblings): HDD random
+# reads saturate ~240 IOPS and the squeezed page cache OOM-killed the first run
+synthetic_shoemark_data_dir = "~/Development/Doctorate/synthetic/Shoemarks_GAN/train"
 min_floor_roi_height = 512
 synthetic_ratio = 0.5

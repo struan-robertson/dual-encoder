@@ -1,7 +1,7 @@
 [hyperparameters]
 p_val = 2
 margin = 2
-batch_size = 96
+batch_size = 48 # Max that fits the 24 GB card at the full unfreeze ladder (peak 22.3 GiB; 52 hits the ceiling)
 embedding_size = 128
 triplet_swapping = true
 
@@ -11,25 +11,29 @@ epochs = 5_000
 gpu_number = 0
 print_iter = 100
 val_iter = 500
-name = "default"
+name = "unsb"
 resume_checkpoint = "" # Leave empty for no resuming
 
 [training.pre_training]
 pre_trained = true
 frozen = true
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
+epoch_unfreeze = 500 # Number of epochs between layer unfreezes (see gan_pool.toml)
 defrost = 0 # When to start layer unfreezing
 # TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
 permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 refreeze = false # Refreeze previous layer after unfreezing one before
 
 [gan]
-enabled = true # When disabled, grayscale shoeprints are used in place of generated shoemarks
-# "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml
-# (checkpoint = [experiment] name + [test] epoch there; difficulty is ignored)
-backend = "one_to_many_gan"
-compile = true # Compile the generator with torch.compile (dynamic batch size)
-config = "/home/struan/Development/Doctorate/one_to_many_gan/implementation/config.toml"
+# In-loop generation is disabled: 5-NFE UNSB generation is ~5x the GAN's cost
+# (~105 s/epoch), so marks are pre-generated with UNSB's generate_pool.py
+# (checkpoint shoeprint_unsb_v2 epoch 54, pool size from style_coverage.py) and
+# streamed from disk via synthetic_shoemark_data_dir below
+enabled = false
+backend = "unsb"
+compile = false # No benefit for the UNSB generator (measured at parity with eager) and
+                # its dynamic-shape compile does not hold: every new batch size would
+                # trigger a fresh multi-minute compilation
+config = "/home/struan/Development/Doctorate/diffusion/UNSB/config.toml"
 initial_difficulty = 0.2
 max_difficulty = 1.0
 peak_steps = 2_500
@@ -114,5 +118,8 @@ image_size = [512, 256]
 floor_image_data_dir = "~/Vault/University/Doctorate/Data/Flooring/train"
 shoeprint_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoeprints/train"
 shoemark_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Compiled/Shoemarks/train"
+# pre-generated UNSB marks (generate_pool.py); classes without a real shoemark
+# draw a random pool image instead of invoking the generator in-loop
+synthetic_shoemark_data_dir = "~/Extra/Doctorate/synthetic/Shoemarks_UNSB/train"
 min_floor_roi_height = 512
 synthetic_ratio = 0.5

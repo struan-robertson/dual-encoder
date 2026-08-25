@@ -85,6 +85,7 @@ class LabeledCombinedDataset(Dataset):
         shoeprint_path = Path(shoeprint_path).expanduser()
         shoemark_path = Path(shoemark_path).expanduser()
 
+        self.shoemark_path = shoemark_path
         self.shoeprint_files = find_all_images(shoeprint_path)
 
         shoemark_files = find_all_images(shoemark_path)

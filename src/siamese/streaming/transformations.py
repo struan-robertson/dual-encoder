@@ -1,11 +1,17 @@
 """GPU transformations for streaming data."""
 
+from typing import TYPE_CHECKING
+
 import torch
 import torchvision.transforms.v2 as transforms
 import torchvision.transforms.v2.functional as F
-from one_to_many_gan import GeneratorHandler
 
 from siamese.streaming import ShoemarkImpressionType
+
+if TYPE_CHECKING:
+    from one_to_many_gan import GeneratorHandler
+
+    from siamese.config import Augmentations
 
 
 class RandomCropAndPad:
@@ -54,93 +60,127 @@ class RandomCropAndPad:
         )
 
 
+def _build_affine(config) -> transforms.Transform:
+    """Build a flip + affine transform from an augmentation config table."""
+    if not config["enabled"]:
+        return transforms.Identity()
+
+    steps: list[transforms.Transform] = []
+    if config["flip"]:
+        steps.append(transforms.RandomHorizontalFlip())
+    steps.append(
+        transforms.RandomAffine(
+            degrees=config["degrees"],  # pyright: ignore [reportArgumentType]
+            translate=tuple(config["translate"]),
+            scale=tuple(config["scale"]),
+            fill=config["fill"],
+            shear=[config["shear"]] * 4,
+        )
+    )
+    return transforms.Compose(steps)
+
+
 class StreamingTransforms:
-    """Transforms used in the streaming dataloader."""
+    """Transforms used in the streaming dataloader.
 
-    def __init__(
-        self,
-        fill: float = 0.0,
-        min_edge: int = 64,
-        size: tuple[int, int] = (512, 256),
-    ):
-        self.post_blend_transform = transforms.RandomApply(
-            transforms=[RandomCropAndPad(fill=fill, min_edge=min_edge, size=size)],
-            p=0.5,
+    Each augmentation is built from its table in the [augmentations] config
+    section; disabled augmentations become identity transforms so call sites
+    never need to branch.
+    """
+
+    def __init__(self, aug_config: "Augmentations", size: tuple[int, int]):
+        self.shoeprint_affine = _build_affine(aug_config["shoeprint_affine"])
+        self.shoemark_affine = _build_affine(aug_config["shoemark_affine"])
+        self.shoemark_back_affine = _build_affine(aug_config["shoemark_back_affine"])
+
+        # Whether non-dust no-background shoemarks are blended onto floor images
+        self.background_substitution = aug_config["background_substitution"]["enabled"]
+
+        self.invert = (
+            transforms.RandomInvert()
+            if aug_config["dust_invert"]["enabled"]
+            else transforms.Identity()
         )
 
-        # TODO this may be too aggressive for shoeprints
-        # TODO specify in config
-        self.shoemark_affine = transforms.Compose(
-            [
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomAffine(
-                    degrees=20,  # pyright: ignore [reportArgumentType]
-                    translate=(0.1, 0.3),
-                    scale=(0.75, 1.25),
-                    fill=1.0,
-                    shear=[0.1] * 4,
-                ),
-            ]
-        )
-        self.shoemark_back_affine = transforms.Compose(
-            [
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomAffine(
-                    degrees=10,  # pyright: ignore [reportArgumentType]
-                    translate=(0.05, 0.15),
-                    scale=(0.9, 1.1),
-                    fill=0.0,
-                    shear=[0.05] * 4,
-                ),
-            ]
-        )
-        self.shoeprint_affine = transforms.Compose(
-            [
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomAffine(
-                    degrees=10,  # pyright: ignore [reportArgumentType]
-                    translate=(0.05, 0.15),
-                    scale=(0.9, 1.1),
-                    fill=1.0,
-                    shear=[0.05] * 4,
-                ),
-            ]
+        blue_shift = aug_config["blue_shift"]
+        if blue_shift["enabled"]:
+            max_shift = blue_shift["max_shift"]
+
+            def shoemark_blue_shift(shoemark: torch.Tensor):
+                shift_amount = (
+                    torch.rand(shoemark.shape[0], device=shoemark.device) * max_shift
+                )
+                shoemark[:, 2, :, :].add_(shift_amount[:, None, None])
+                return shoemark
+
+            self.shoemark_blue_shift = transforms.RandomApply(
+                [
+                    shoemark_blue_shift,
+                    transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
+                ],
+                p=blue_shift["p"],
+            )
+        else:
+            self.shoemark_blue_shift = transforms.Identity()
+
+        erasing = aug_config["pre_blend_erasing"]
+        # Probability of applying pre blend transforms, used in shoemark_pipeline
+        self.pre_blend_p = erasing["p"] if erasing["enabled"] else 0.0
+        self.pre_blend_transforms = (
+            transforms.RandomErasing(
+                p=1,
+                scale=(erasing["min_scale"], erasing["max_scale"]),
+                ratio=(0.3, 3.33),
+                value=erasing["fill"],
+            )
+            if erasing["enabled"]
+            else transforms.Identity()
         )
 
-        def shoemark_blue_shift(shoemark: torch.Tensor):
-            shift_amount = torch.rand(shoemark.shape[0], device=shoemark.device) * 0.25
-            shoemark[:, 2, :, :].add_(shift_amount[:, None, None])
-            return shoemark
-
-        self.shoemark_blue_shift = transforms.RandomApply(
-            [shoemark_blue_shift, transforms.Lambda(lambda x: torch.clamp(x, 0, 1))],
-            p=1 / 3,
+        crop = aug_config["post_blend_crop"]
+        self.post_blend_transform = (
+            transforms.RandomApply(
+                transforms=[
+                    RandomCropAndPad(
+                        fill=crop["fill"], min_edge=crop["min_edge"], size=size
+                    )
+                ],
+                p=crop["p"],
+            )
+            if crop["enabled"]
+            else transforms.Identity()
         )
 
-        self.invert = transforms.RandomInvert()
-
-        # TODO specify in config
-        self.photometric_transforms = transforms.Compose(
-            [
-                transforms.RandomChoice(
-                    [
-                        transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0)),
-                        transforms.RandomAdjustSharpness(sharpness_factor=2),
-                    ]
-                ),
-                transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
-                transforms.RandomApply(
-                    [transforms.ColorJitter(brightness=0.4, hue=0.2)], p=0.5
-                ),
-                transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
-            ]
-        )
-
-        # TODO set in config
-        max_erasing_ratio = 0.5
-        self.pre_blend_transforms = transforms.RandomErasing(
-            p=1, scale=(0.1, max_erasing_ratio), ratio=(0.3, 3.33), value=1.0
-        )
+        photometric = aug_config["photometric"]
+        if photometric["enabled"]:
+            self.photometric_transforms = transforms.Compose(
+                [
+                    transforms.RandomChoice(
+                        [
+                            transforms.GaussianBlur(
+                                kernel_size=tuple(photometric["blur_kernel"]),
+                                sigma=tuple(photometric["blur_sigma"]),
+                            ),
+                            transforms.RandomAdjustSharpness(
+                                sharpness_factor=photometric["sharpness_factor"]
+                            ),
+                        ]
+                    ),
+                    transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
+                    transforms.RandomApply(
+                        [
+                            transforms.ColorJitter(
+                                brightness=photometric["brightness"],
+                                hue=photometric["hue"],
+                            )
+                        ],
+                        p=photometric["jitter_p"],
+                    ),
+                    transforms.Lambda(lambda x: torch.clamp(x, 0, 1)),
+                ]
+            )
+        else:
+            self.photometric_transforms = transforms.Identity()
 
 
 def shoemark_pipeline(
@@ -148,10 +188,11 @@ def shoemark_pipeline(
     floor_images: torch.Tensor,
     shoemarks: torch.Tensor,
     shoemark_type_mask: torch.Tensor,
-    generator_handler: GeneratorHandler,
-    difficulty: float,
     streaming_transform: "StreamingTransforms",
     device,
+    generator_handler: "GeneratorHandler | None" = None,
+    difficulty: float = 1.0,
+    synthetic_pool: bool = False,
 ):
     """Handle the creation of shoemarks for a batch of shoeprints."""
     indices = torch.arange(shoemarks.size(0), device=device)
@@ -173,12 +214,23 @@ def shoemark_pipeline(
     no_shoemark_shoeprints = shoeprints[no_shoemark_mask]
 
     if len(no_shoemark_shoeprints) > 0:
-        # Generate shoemarks using shoeprints
-        generated_shoemarks = generator_handler.generate(
-            F.rgb_to_grayscale(no_shoemark_shoeprints),
-            difficulty=difficulty,
-            normalised=False,
-        )
+        if synthetic_pool:
+            # Pre-generated marks streamed from disk by the dataset in [0, 1];
+            # map back to the generator's tanh range so downstream treatment
+            # matches in-loop generation exactly
+            generated_shoemarks = shoemarks[no_shoemark_mask] * 2.0 - 1.0
+        elif generator_handler is not None:
+            # Generate shoemarks using shoeprints
+            generated_shoemarks = generator_handler.generate(
+                F.rgb_to_grayscale(no_shoemark_shoeprints),
+                difficulty=difficulty,
+                normalised=False,
+            )
+        else:
+            # No GAN: use shoeprints directly, converted to grayscale to match
+            # the format the GAN would produce
+            generated_shoemarks = F.rgb_to_grayscale(no_shoemark_shoeprints)
+
         b, _, h, w = generated_shoemarks.shape
         generated_shoemarks = generated_shoemarks.expand(b, 3, h, w)
 
@@ -196,18 +248,25 @@ def shoemark_pipeline(
         shoemark_type_mask != ShoemarkImpressionType.SHOEMARK_BACK
     ]
 
-    # Determine which need background substitution
-    include_background = no_background_shoemarks.std(dim=(1, 2, 3)) > 0.08
+    # Low-texture shoemarks are treated as dust marks
+    is_dust = no_background_shoemarks.std(dim=(1, 2, 3)) <= 0.08
+
+    # Non-dust shoemarks are blended onto floor images (unless disabled)
+    if streaming_transform.background_substitution:
+        include_background = ~is_dust
+    else:
+        include_background = torch.zeros_like(is_dust)
 
     # Randomly invert dust shoemarks
-    no_background_shoemarks[~include_background] = streaming_transform.invert(
-        no_background_shoemarks[~include_background]
+    no_background_shoemarks[is_dust] = streaming_transform.invert(
+        no_background_shoemarks[is_dust]
     )
 
-    # Randomly apply pre blend transforms (excluding dust)
+    # Randomly apply pre blend transforms to dust shoemarks
     pre_blend_transformed = (
-        torch.rand(no_background_shoemarks.shape[0], device=device) > 0.5
-    ) & ~include_background
+        torch.rand(no_background_shoemarks.shape[0], device=device)
+        < streaming_transform.pre_blend_p
+    ) & is_dust
     pre_blend_mask = torch.zeros(shoemarks.size(0), dtype=torch.bool, device=device)
     pre_blend_mask[combined_indices[pre_blend_transformed]] = True
 
@@ -217,11 +276,9 @@ def shoemark_pipeline(
         )
     )
 
-    # Convert some shoemarks to blue (enhanced blood)
-    no_background_shoemarks[include_background] = (
-        streaming_transform.shoemark_blue_shift(
-            no_background_shoemarks[include_background]
-        )
+    # Convert some non-dust shoemarks to blue (enhanced blood)
+    no_background_shoemarks[~is_dust] = streaming_transform.shoemark_blue_shift(
+        no_background_shoemarks[~is_dust]
     )
 
     # Don't affine cropped shoemarks
@@ -267,3 +324,58 @@ def shoemark_pipeline(
     sorted_pre_blended = pre_blend_mask[result_indices]
 
     return torch.stack([shoemark for _, shoemark in result_pairs]), sorted_pre_blended
+
+
+def augment_batch(
+    shoeprints: torch.Tensor,
+    shoeprints_gen: torch.Tensor,
+    floor_images: torch.Tensor,
+    shoemarks: torch.Tensor,
+    shoemark_type_mask: torch.Tensor,
+    streaming_transform: "StreamingTransforms",
+    device,
+    generator_handler: "GeneratorHandler | None" = None,
+    difficulty: float = 1.0,
+    synthetic_pool: bool = False,
+):
+    """Run the full augmentation pipeline on a batch.
+
+    Creates shoemarks with shoemark_pipeline then applies the affine,
+    post blend, and photometric transforms. Returns the augmented
+    (shoeprints, shoemarks) pair.
+    """
+    shoemarks, pre_blended_mask = shoemark_pipeline(
+        shoeprints_gen,
+        floor_images,
+        shoemarks,
+        shoemark_type_mask,
+        streaming_transform=streaming_transform,
+        device=device,
+        generator_handler=generator_handler,
+        difficulty=difficulty,
+        synthetic_pool=synthetic_pool,
+    )
+
+    shoeprints = streaming_transform.shoeprint_affine(shoeprints)
+
+    background_mask = shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
+
+    # Apply post blend transforms to shoemarks that did not feature pre blend
+    # transforms (they are mutually exclusive) or a pre-existing background
+    shoemarks[~pre_blended_mask & ~background_mask] = (
+        streaming_transform.post_blend_transform(
+            shoemarks[~pre_blended_mask & ~background_mask]
+        )
+    )
+
+    # Apply photometric transforms to shoemarks without a pre-existing background
+    shoemarks[~background_mask] = streaming_transform.photometric_transforms(
+        shoemarks[~background_mask]
+    )
+
+    # Smaller affine with black fill for shoemarks with a pre-existing background
+    shoemarks[background_mask] = streaming_transform.shoemark_back_affine(
+        shoemarks[background_mask]
+    )
+
+    return shoeprints, shoemarks

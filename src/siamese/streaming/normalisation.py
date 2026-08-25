@@ -2,6 +2,10 @@
 
 import torch
 
+# Initial normalisation statistics, updated by AdaptiveNormalisation as data streams
+IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406])
+IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225])
+
 
 class AdaptiveNormalisation:
     """Use Exponential Moving Average (EMA) for normalising a stream of data."""

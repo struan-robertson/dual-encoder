@@ -5,16 +5,10 @@ from pathlib import Path
 
 import torch
 import torchvision
-from one_to_many_gan import GeneratorHandler, load_gan_config
 from tqdm import trange
 
 from siamese.config import load_config
-from siamese.streaming import (
-    ShoemarkImpressionType,
-    StreamingDataset,
-    StreamingTransforms,
-    shoemark_pipeline,
-)
+from siamese.streaming import StreamingDataset, StreamingTransforms, augment_batch
 
 
 # Remember to run with a batch size of 1 so that each image augmentation is unique
@@ -25,15 +19,37 @@ def generate_val_images(save_dir: Path, total_per_shoeprint: int = 10):
         if len(sys.argv) < 2 or sys.argv[1] == "" or sys.argv[1] == "-i"
         else load_config(sys.argv[1])
     )
-    gan_config = load_gan_config(config["training"]["gan_config"])
 
-    gan_device = torch.device(
-        f"cuda:{gan_config['training']['gpu_number']}"
-        if torch.cuda.is_available()
-        else "cpu"
-    )
+    if config["gan"]["enabled"]:
+        # Only import the generator backend when it is enabled
+        if config["gan"]["backend"] == "unsb":
+            sys.path.insert(0, str(config["gan"]["config"].parent))
+            from unsb_handler import GeneratorHandler, load_unsb_opt  # noqa: PLC0415
 
-    generator_handler = GeneratorHandler(gan_config, gan_device)
+            gan_opt = load_unsb_opt(config["gan"]["config"])
+            device = torch.device(
+                f"cuda:{gan_opt.gpu_ids[0]}"
+                if torch.cuda.is_available() and gan_opt.gpu_ids
+                else "cpu"
+            )
+            generator_handler = GeneratorHandler(gan_opt, device)
+        else:
+            from one_to_many_gan import GeneratorHandler, load_gan_config  # noqa: PLC0415
+
+            gan_config = load_gan_config(config["gan"]["config"])
+            device = torch.device(
+                f"cuda:{gan_config['training']['gpu_number']}"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+            generator_handler = GeneratorHandler(gan_config, device)
+    else:
+        device = torch.device(
+            f"cuda:{config['training']['gpu_number']}"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+        generator_handler = None
 
     val_dataset = StreamingDataset(
         Path("/home/struan/Development/Doctorate/siamese/data/Shoeprints/val"),
@@ -42,7 +58,7 @@ def generate_val_images(save_dir: Path, total_per_shoeprint: int = 10):
         config["data"]["image_size"],
         config["data"]["streaming"]["min_floor_roi_height"],
         synthetic_ratio=0,
-        val=True,
+        labelled=True,
     )
 
     val_loader = torch.utils.data.DataLoader(
@@ -55,7 +71,7 @@ def generate_val_images(save_dir: Path, total_per_shoeprint: int = 10):
     )
 
     streaming_transform = StreamingTransforms(
-        fill=0.0, min_edge=225, size=config["data"]["image_size"]
+        config["augmentations"], size=config["data"]["image_size"]
     )
 
     shoeprint_dir = save_dir / "Shoeprints"
@@ -73,46 +89,16 @@ def generate_val_images(save_dir: Path, total_per_shoeprint: int = 10):
             shoeprint_classes,
         ) in val_loader:
             with torch.no_grad():
-                shoeprints = shoeprint_batch.to(gan_device)
-                shoeprints_gen = shoeprint_gen_batch.to(gan_device)
-                floor_images = floor_image_batch.to(gan_device)
-                shoemarks = shoemark_batch.to(gan_device)
-                shoemark_type_mask = shoemark_type_mask_batch.to(gan_device)
-
-                shoemarks, pre_blended_mask = shoemark_pipeline(
-                    shoeprints_gen,
-                    floor_images,
-                    shoemarks,
-                    shoemark_type_mask,
-                    generator_handler,
-                    difficulty=1.0,
+                shoeprints, shoemarks = augment_batch(
+                    shoeprint_batch.to(device),
+                    shoeprint_gen_batch.to(device),
+                    floor_image_batch.to(device),
+                    shoemark_batch.to(device),
+                    shoemark_type_mask_batch.to(device),
                     streaming_transform=streaming_transform,
-                    device=gan_device,
-                )
-
-                shoeprints = streaming_transform.shoeprint_affine(shoeprints)
-
-                # Apply post blend transforms to shoemarks that did not feature pre
-                # blend transforms or pre-existing background
-                background_mask = (
-                    shoemark_type_mask == ShoemarkImpressionType.SHOEMARK_BACK
-                )
-                shoemarks[~pre_blended_mask & ~background_mask] = (
-                    streaming_transform.post_blend_transform(
-                        shoemarks[~pre_blended_mask & ~background_mask]
-                    )
-                )
-
-                # Apply photometric transforms to non back shoemarks
-                shoemarks[~background_mask] = (
-                    streaming_transform.photometric_transforms(
-                        shoemarks[~background_mask]
-                    )
-                )
-
-                # Smaller affine with black fill
-                shoemarks[background_mask] = streaming_transform.shoemark_back_affine(
-                    shoemarks[background_mask]
+                    device=device,
+                    generator_handler=generator_handler,
+                    difficulty=1.0,
                 )
 
                 shoeprints = shoeprints.cpu()
