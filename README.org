@@ -1,0 +1,52 @@
+#+TITLE: Dual-encoder shoeprint retrieval
+
+Retrieval of reference shoeprints from crime scene shoemarks. Separate
+ResNet-50 encoders embed the two domains into a shared space, trained with a
+triplet margin loss on real impression pairs and on synthetic shoemarks
+produced by a generator.
+
+* Configuration
+
+Options resolve as defaults, then the configuration file, then command-line
+arguments. All options are declared in =src/siamese/config.py=. An unknown key
+in the configuration file or on the command line is an error. Overrides name an
+option by its dotted path and accept TOML literals.
+
+#+begin_src sh
+uv run python src/training.py
+uv run python src/training.py final_combined.toml
+uv run python src/training.py --training.epochs 7500 --curriculum.enabled true
+#+end_src
+
+* Synthetic shoemarks
+
+Synthetic marks are generated ahead of training by =generate_pool.py= in the
+UNSB repository, then streamed from disk. The pool directory is set by
+=data.streaming.synthetic_shoemark_data_dir=. When the difficulty curriculum is
+enabled, sibling directories named =<pool>_d<level>= supply marks at each
+difficulty level.
+
+* Campaigns
+
+=campaign_runner.py= runs a queue of jobs defined in a TOML file, generating
+each job's pool, training it, and evaluating the best checkpoint.
+
+#+begin_src sh
+uv run python campaign_runner.py campaign_dual_encoder_local.toml
+#+end_src
+
+Each job names a generator backend, its configuration, and any per-job option
+overrides. Per-job configurations and results are written to =campaign/= and are
+not tracked.
+
+* Evaluation
+
+#+begin_src sh
+uv run python src/evaluation.py checkpoints/<run>/best --dataset test -p 5
+uv run python src/failure_analysis.py checkpoints/<run>/best/<checkpoint>.tar --dataset wvu
+#+end_src
+
+=evaluation.py= reports the proportion of query shoemarks whose correct
+shoeprint ranks within the top p percent of the gallery. =failure_analysis.py=
+collects the queries that fall outside that threshold, writing each with its
+correct and incorrectly matched shoeprints for inspection.
