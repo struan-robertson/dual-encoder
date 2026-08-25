@@ -72,6 +72,10 @@ def _build_affine(config) -> transforms.Transform:
             translate=tuple(config["translate"]),
             scale=tuple(config["scale"]),
             fill=config["fill"],
+            # RandomAffine reads this as (x_min, x_max, y_min, y_max), so equal
+            # values sample a constant shear rather than a random one. Every
+            # campaign run trained this way; changing it to [-s, s, -s, s]
+            # would make new runs incomparable with the reported results.
             shear=[config["shear"]] * 4,
         )
     )
