@@ -113,7 +113,7 @@ def stage_n_styles(job, camp, patched):
         return int(n_file.read_text().split()[0])
 
     cmd = [
-        "uv", "run", "python",
+        "uv", "run", "--no-sync", "python",
         Path(camp["unsb_repo"]).expanduser() / "style_coverage.py",
         "--backend", job["backend"],
         "--generator-config", patched,
@@ -183,7 +183,7 @@ def stage_pool(job, camp, patched, n_styles):
     work.mkdir(parents=True, exist_ok=True)
     marker.write_text(stamp)
     cmd = [
-        "uv", "run", "python",
+        "uv", "run", "--no-sync", "python",
         Path(camp["unsb_repo"]).expanduser() / "generate_pool.py",
         "--backend", job["backend"],
         "--n-styles", n_styles,
@@ -251,7 +251,7 @@ def stage_train(job, camp, cfg):
     if training_complete(job, camp):
         print("[%s] training already complete" % job["name"], flush=True)
         return
-    sh(["uv", "run", "python", "src/training.py", cfg.relative_to(REPO)])
+    sh(["uv", "run", "--no-sync", "python", "src/training.py", cfg.relative_to(REPO)])
 
 
 def stage_eval(job, cfg):
@@ -278,7 +278,7 @@ def stage_eval(job, cfg):
             log = best_dir / ("eval_%s_p%d.log" % (ds, p))
             if not log.exists():
                 sh([
-                    "uv", "run", "python", "src/evaluation.py", best_dir,
+                    "uv", "run", "--no-sync", "python", "src/evaluation.py", best_dir,
                     cfg.relative_to(REPO), "--dataset", ds, "-p", p,
                     "--log-name", log.name,
                 ])

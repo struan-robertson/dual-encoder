@@ -8,10 +8,6 @@ dependencies = [
     "matplotlib>=3.10.1",
     "numpy>=2.2.3",
     "pillow>=11.1.0",
-    "torch>=2.11.0",
-    "torchvision>=0.26.0",
-    "pytorch-triton-rocm>=3.5.1 ; sys_platform == 'linux'",
-    "triton-rocm>=3.6.0 ; sys_platform == 'linux'",
     "tqdm>=4.67.1",
     "one-to-many-gan>=0.1.0",
     "scikit-learn>=1.7.2",
@@ -19,23 +15,43 @@ dependencies = [
     "impression-tools",
 ]
 
+# Pick the build of torch that matches the card. CUDA is the default choice:
+#     uv sync --extra cuda
+#     uv sync --extra rocm
+[project.optional-dependencies]
+cuda = [
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+]
+rocm = [
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "pytorch-triton-rocm>=3.5.1 ; sys_platform == 'linux'",
+    "triton-rocm>=3.6.0 ; sys_platform == 'linux'",
+]
+
+[tool.uv]
+conflicts = [[{ extra = "cuda" }, { extra = "rocm" }]]
+
 [tool.uv.sources]
 one-to-many-gan = { path = "../one_to_many_gan/implementation/", editable = true }
 torch = [
-  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cuda", extra = "cuda" },
+  { index = "pytorch-rocm", extra = "rocm" },
 ]
 torchvision = [
-  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cuda", extra = "cuda" },
+  { index = "pytorch-rocm", extra = "rocm" },
 ]
-# ROCm support relies on both Triton packages, which should also be installed from
-# the PyTorch index (and included in `project.dependencies`).
-pytorch-triton-rocm = [
-  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
-]
-triton-rocm = [
-  { index = "pytorch-rocm", marker = "sys_platform == 'linux'" },
-]
+# ROCm relies on both Triton packages, which come from the same index
+pytorch-triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
+triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
 impression-tools = { path = "../impression_tools", editable = true }
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-rocm"

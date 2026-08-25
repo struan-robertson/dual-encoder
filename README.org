@@ -5,6 +5,26 @@ ResNet-50 encoders embed the two domains into a shared space, trained with a
 triplet margin loss on real impression pairs and on synthetic shoemarks
 produced by a generator.
 
+* Installation
+
+Choose the build of torch that matches the card:
+
+#+begin_src sh
+uv sync --extra cuda
+uv sync --extra rocm
+#+end_src
+
+Because torch comes from an extra, pass the same one when running, otherwise
+=uv run= resolves an environment without it:
+
+#+begin_src sh
+uv run --extra cuda python src/training.py
+uv run --no-sync python src/training.py   # use the environment as it stands
+#+end_src
+
+=campaign_runner.py= uses =--no-sync= for the commands it starts, so prepare the
+environment before running a campaign.
+
 * Configuration
 
 Options resolve as defaults, then the configuration file, then command-line
