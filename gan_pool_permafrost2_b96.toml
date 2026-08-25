@@ -1,5 +1,5 @@
 [hyperparameters]
-p_val = 2
+distance_norm = 2
 margin = 2
 batch_size = 96 # Mining arm: doubled pool; fits because the permafrost2 trainable set (fc+layer4+layer3) stays under the 24 GB ceiling
 embedding_size = 128
@@ -23,10 +23,8 @@ frozen = true
 # checkpoint spread, so this isolates whether a doubled mining pool closes
 # the gap. Deep-ladder@96 cannot run (exceeds 24 GB), hence the sequential
 # design rather than a full 2x2.
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
-defrost = 0 # When to start layer unfreezing
-permafrost = 2 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
-refreeze = false # Refreeze previous layer after unfreezing one before
+unfreeze_cadence = 500 # Number of epochs between layer unfreezes
+ladder_depth = 2 # Residual stages the ladder opens (fc + layer4 + layer3); 0 unfreezes all
 
 [curriculum]
 # Pooled protocol: marks pre-generated with generate_pool.py --backend gan from

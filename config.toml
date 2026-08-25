@@ -1,5 +1,5 @@
 [hyperparameters]
-p_val = 2
+distance_norm = 2
 margin = 2
 batch_size = 96
 embedding_size = 128
@@ -17,11 +17,9 @@ resume_checkpoint = "" # Leave empty for no resuming
 [training.pre_training]
 pre_trained = true
 frozen = true
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
-defrost = 0 # When to start layer unfreezing
+unfreeze_cadence = 500 # Number of epochs between layer unfreezes
 # TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
-permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
-refreeze = false # Refreeze previous layer after unfreezing one before
+ladder_depth = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 
 [curriculum]
 # "one_to_many_gan" or "unsb"; for unsb, point config at the UNSB repo's config.toml

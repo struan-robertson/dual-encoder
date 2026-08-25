@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from siamese.config import load_config
 from siamese.datasets import IndividualDataset
-from siamese.model import SharedSiamese
+from siamese.model import ImpressionEncoder
 from siamese.streaming import AdaptiveNormalisation
 
 shoeprint_path = Path(
@@ -34,11 +34,10 @@ device = torch.device(
     f"cuda:{config.training.gpu_number}" if torch.cuda.is_available() else "cpu"
 )
 
-shoeprint_model = SharedSiamese(
+shoeprint_model = ImpressionEncoder(
     embedding_size=config.hyperparameters.embedding_size,
     pre_trained=config.training.pre_training.pre_trained,
-    refreeze=config.training.pre_training.refreeze,
-    permafrost=config.training.pre_training.permafrost,
+    ladder_depth=config.training.pre_training.ladder_depth,
 ).to(device)
 
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])

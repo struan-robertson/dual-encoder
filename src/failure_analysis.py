@@ -25,7 +25,7 @@ import torch
 
 from siamese.config import load_config
 from siamese.datasets import LabeledCombinedDataset, get_id
-from siamese.model import SharedSiamese
+from siamese.model import ImpressionEncoder
 from siamese.streaming import IMAGENET_MEAN, IMAGENET_STD, AdaptiveNormalisation
 
 
@@ -63,8 +63,8 @@ def main():
 
     state = torch.load(checkpoint, map_location=device)
     embedding_size = state["shoeprint_model_state_dict"]["model.fc.weight"].shape[0]
-    shoeprint_model = SharedSiamese(embedding_size=embedding_size).to(device).eval()
-    shoemark_model = SharedSiamese(embedding_size=embedding_size).to(device).eval()
+    shoeprint_model = ImpressionEncoder(embedding_size=embedding_size).to(device).eval()
+    shoemark_model = ImpressionEncoder(embedding_size=embedding_size).to(device).eval()
     shoeprint_model.load_state_dict(state["shoeprint_model_state_dict"])
     shoemark_model.load_state_dict(state["shoemark_model_state_dict"])
     shoeprint_norm = AdaptiveNormalisation(IMAGENET_MEAN, IMAGENET_STD, device=device)
@@ -87,14 +87,14 @@ def main():
 
     class_idxs = list(print_embeddings.keys())
     gallery = torch.stack(list(print_embeddings.values()))
-    p_val = config.hyperparameters.p_val
+    distance_norm = config.hyperparameters.distance_norm
     k = math.ceil(len(gallery) * args.p / 100)
     print("%d gallery prints, %d query classes, failure = rank >= %d (top %d%%)"
           % (len(gallery), len(mark_embeddings), k, args.p))
 
     failures, n_marks = [], 0
     for shoe_id, embeddings in mark_embeddings.items():
-        dists = torch.cdist(embeddings, gallery, p=p_val)
+        dists = torch.cdist(embeddings, gallery, p=distance_norm)
         order = torch.argsort(dists)
         correct_idx = class_idxs.index(shoe_id)
         ranks = (order == correct_idx).nonzero()[:, 1]

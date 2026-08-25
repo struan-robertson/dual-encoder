@@ -1,5 +1,5 @@
 [hyperparameters]
-p_val = 2
+distance_norm = 2
 margin = 2
 batch_size = 96 # Mining pool of the adopted protocol; with the deep ladder this
                 # needs gradient_checkpointing on the 24 GB card (peak 11.4 GiB
@@ -22,10 +22,8 @@ resume_checkpoint = "" # Leave empty for no resuming
 [training.pre_training]
 pre_trained = true
 frozen = true
-epoch_unfreeze = 500 # Ladder cadence of the ablations: layer4 at 500 ... layer1 at 2,000
-defrost = 0
-permafrost = 4 # Deep ladder: fc + layer4..layer1; the stem is never unfrozen
-refreeze = false
+unfreeze_cadence = 500 # Ladder cadence of the ablations: layer4 at 500 ... layer1 at 2,000
+ladder_depth = 4 # Deep ladder: fc + layer4..layer1; the stem is never unfrozen
 gradient_checkpointing = true # Recompute stage activations in backward so
                               # deep@96 fits locally; BN running stats see
                               # doubled updates (see SharedSiamese.forward)

@@ -12,7 +12,7 @@ from tqdm import tqdm
 from evaluation import validate
 from siamese.config import parse_config
 from siamese.datasets import LabeledCombinedDataset
-from siamese.model import SharedSiamese
+from siamese.model import ImpressionEncoder
 from siamese.streaming import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -80,19 +80,17 @@ difficulty_scheduler = (
 
 # * Model
 
-shoeprint_model = SharedSiamese(
+shoeprint_model = ImpressionEncoder(
     embedding_size=config.hyperparameters.embedding_size,
     pre_trained=config.training.pre_training.pre_trained,
-    refreeze=config.training.pre_training.refreeze,
-    permafrost=config.training.pre_training.permafrost,
+    ladder_depth=config.training.pre_training.ladder_depth,
     gradient_checkpointing=config.training.pre_training.gradient_checkpointing,
 ).to(device)
 
-shoemark_model = SharedSiamese(
+shoemark_model = ImpressionEncoder(
     embedding_size=config.hyperparameters.embedding_size,
     pre_trained=config.training.pre_training.pre_trained,
-    refreeze=config.training.pre_training.refreeze,
-    permafrost=config.training.pre_training.permafrost,
+    ladder_depth=config.training.pre_training.ladder_depth,
     gradient_checkpointing=config.training.pre_training.gradient_checkpointing,
 ).to(device)
 
@@ -113,7 +111,7 @@ shoemark_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
 
 criterion = torch.nn.TripletMarginLoss(
     margin=config.hyperparameters.margin,
-    p=config.hyperparameters.p_val,
+    p=config.hyperparameters.distance_norm,
     swap=config.hyperparameters.triplet_swapping,
 )
 
@@ -196,11 +194,14 @@ val_dataset = LabeledCombinedDataset(
 
 # * Main loop
 
-# TODO extract into a separate function
-# TODO start at 1
-start_epoch = 0
-if config.training.resume_checkpoint:
-    checkpoint = torch.load(config.training.resume_checkpoint, map_location=device)
+
+def resume(path: Path) -> int:
+    """Restore every piece of training state and return the epoch to resume at.
+
+    The named epoch is replayed, so the ladder is restored to its state at the
+    *start* of that epoch: the unfreeze for the epoch fires again in the loop.
+    """
+    checkpoint = torch.load(path, map_location=device)
     shoeprint_model.load_state_dict(checkpoint["shoeprint_model_state_dict"])
     shoemark_model.load_state_dict(checkpoint["shoemark_model_state_dict"])
     shoeprint_adaptive_norm.load_state_dict(
@@ -218,7 +219,8 @@ if config.training.resume_checkpoint:
         difficulty_scheduler.load_state_dict(
             checkpoint["difficulty_scheduler_state_dict"]
         )
-    start_epoch = int(config.training.resume_checkpoint.stem.split("_")[-1])
+
+    epoch = int(path.stem.split("_")[-1])
 
     if "shoeprint_scheduler_state_dict" in checkpoint:
         shoeprint_scheduler.load_state_dict(checkpoint["shoeprint_scheduler_state_dict"])
@@ -226,14 +228,22 @@ if config.training.resume_checkpoint:
     else:
         # Checkpoints predating scheduler state: replay the per-epoch steps the
         # original run had taken by the start of the resume epoch
-        for _ in range(start_epoch):
+        for _ in range(epoch):
             shoeprint_scheduler.step()
             shoemark_scheduler.step()
 
-    # FIXME this wont currently work if epochs start unfreezing later than 0
-    unfrozen_layers = start_epoch // config.training.pre_training.epoch_unfreeze
-    shoeprint_model.unfreeze_to(unfrozen_layers)
-    shoemark_model.unfreeze_to(unfrozen_layers)
+    stages = epoch // config.training.pre_training.unfreeze_cadence
+    shoeprint_model.unfreeze_to(stages)
+    shoemark_model.unfreeze_to(stages)
+    return epoch
+
+
+# TODO start at 1
+start_epoch = (
+    resume(config.training.resume_checkpoint)
+    if config.training.resume_checkpoint
+    else 0
+)
 
 
 def _write_line(line: str, pbar: tqdm, checkpoint_dir: Path):
@@ -285,6 +295,11 @@ def training_loop():
     """Run training loop for siamese model."""
     checkpoint_dir = Path("checkpoints") / config.training.name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    # A model that started unfrozen has no ladder to climb
+    laddering = (
+        config.training.pre_training.pre_trained
+        and config.training.pre_training.frozen
+    )
 
     with tqdm(
         total=config.training.epochs, dynamic_ncols=True, initial=start_epoch
@@ -332,7 +347,7 @@ def training_loop():
                 dists = torch.cdist(
                     shoeprint_embeddings,
                     shoemark_embeddings,
-                    p=config.hyperparameters.p_val,
+                    p=config.hyperparameters.distance_norm,
                 )
 
                 # As we don't drop the last batch,
@@ -380,7 +395,7 @@ def training_loop():
                     dataset=val_dataset,
                     device=device,
                     p=0,
-                    p_val=config.hyperparameters.p_val,
+                    distance_norm=config.hyperparameters.distance_norm,
                 )
                 line = f"Epoch {epoch} S1 validation: = {val}\n"
                 _write_line(line, pbar, checkpoint_dir)
@@ -401,14 +416,10 @@ def training_loop():
                     )
                 torch.save(checkpoint, checkpoint_dir / f"siamese_{epoch}.tar")
 
-            # TODO tidy this up a bit
             if (
-                config.training.pre_training.pre_trained
-                and config.training.pre_training.frozen
+                laddering
                 and epoch != 0
-                and (epoch - config.training.pre_training.defrost)
-                % config.training.pre_training.epoch_unfreeze
-                == 0
+                and epoch % config.training.pre_training.unfreeze_cadence == 0
             ):
                 shoeprint_model.unfreeze_next()
                 shoemark_model.unfreeze_next()

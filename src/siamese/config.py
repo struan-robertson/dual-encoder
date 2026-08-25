@@ -25,9 +25,9 @@ from typing import Union, get_args, get_origin, get_type_hints
 class Hyperparameters:
     """Loss, batch, and embedding settings."""
 
-    p_val: int = 2
-    margin: float = 2.0
-    batch_size: int = 96
+    distance_norm: int = 2  # the p of the Lp embedding distance
+    margin: float = 2.0  # alpha of the triplet loss
+    batch_size: int = 96  # also the size of the negative-mining pool
     embedding_size: int = 128
     triplet_swapping: bool = True
 
@@ -38,10 +38,8 @@ class PreTraining:
 
     pre_trained: bool = True
     frozen: bool = True
-    epoch_unfreeze: int = 500
-    defrost: int = 0
-    permafrost: int = 2
-    refreeze: bool = False
+    unfreeze_cadence: int = 500  # epochs between unfreezing one stage
+    ladder_depth: int = 2  # residual stages the ladder opens; 0 unfreezes all
     gradient_checkpointing: bool = False
 
 

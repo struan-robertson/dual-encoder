@@ -1,5 +1,5 @@
 [hyperparameters]
-p_val = 2
+distance_norm = 2
 margin = 2
 batch_size = 48 # Max that fits the 24 GB card at the full unfreeze ladder (peak 22.3 GiB; 52 hits the ceiling)
 embedding_size = 128
@@ -20,11 +20,9 @@ frozen = true
 # Ladder completes by epoch 2000 (rungs at lr 9.9/9.0/7.9/6.5 e-4 under the
 # cosine anneal); at 2000 the head-only phase had plateaued for ~1000 epochs
 # and the epoch-4000 rung only ever trained at lr <= 1e-4
-epoch_unfreeze = 500 # Number of epochs between layer unfreezes
-defrost = 0 # When to start layer unfreezing
+unfreeze_cadence = 500 # Number of epochs between layer unfreezes
 # TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
-permafrost = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
-refreeze = false # Refreeze previous layer after unfreezing one before
+ladder_depth = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 
 [curriculum]
 # Pooled protocol: marks pre-generated with generate_pool.py --backend gan from

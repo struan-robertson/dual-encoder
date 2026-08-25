@@ -1,13 +1,24 @@
-"""Siamese model implementation."""
+"""The retrieval encoder shared in architecture, but not weights, by both domains."""
 
 import torch
 import torchvision
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
+# The ladder unfreezes from the top of the network downwards. Index 0 is the
+# replaced embedding layer, trainable from the start; ladder_depth counts how
+# many residual stages follow it before the rest stays frozen. The stem
+# convolution is last and is never reached at the depths used in the thesis.
+_LADDER = ("fc", "layer4", "layer3", "layer2", "layer1", "conv1")
 
-class SharedSiamese(nn.Module):
-    """Siamese model with shared weights."""
+
+class ImpressionEncoder(nn.Module):
+    """ResNet-50 embedding one impression domain into the shared feature space.
+
+    Shoeprints and shoemarks each get their own instance: the architecture is
+    shared but the weights are not, so each encoder specialises in the
+    appearance of its own domain while the loss aligns only their outputs.
+    """
 
     def __init__(
         self,
@@ -15,76 +26,55 @@ class SharedSiamese(nn.Module):
         *,
         pre_trained: bool = False,
         frozen: bool = True,
-        refreeze: bool = False,
-        permafrost: int = 0,
+        ladder_depth: int = 0,
         gradient_checkpointing: bool = False,
     ):
         super().__init__()
 
-        if pre_trained:
-            model = torchvision.models.resnet50(weights="DEFAULT")
-        else:
-            model = torchvision.models.resnet50(weights=None)
+        weights = "DEFAULT" if pre_trained else None
+        model = torchvision.models.resnet50(weights=weights)
 
-        # Replace final FC layer with embedding layers
+        # Replace the classification layer with the embedding layer
         model.fc = nn.Linear(model.fc.in_features, embedding_size)
         model.apply(self.init_weights)
 
-        # Freeze model
-        # TODO tidy this code up
         if pre_trained and frozen:
             for param in model.parameters():
                 param.requires_grad = False
-        self.permafrost = permafrost
-        self.refreeze = refreeze
-        self.gradient_checkpointing = gradient_checkpointing
 
         self.model = model
-        self.last_frozen = 1
+        self.ladder_depth = ladder_depth
+        self.gradient_checkpointing = gradient_checkpointing
+        self.unfrozen = 0
 
         if pre_trained:
-            self.unfreeze_idx(0)
+            # The randomly initialised embedding layer trains from the start
+            self.unfreeze_to(1)
 
     def unfreeze_next(self):
-        self.unfreeze_idx(self.last_frozen)
-        self.last_frozen += 1
+        """Open the next stage down the ladder, if the depth cap allows it."""
+        self.unfreeze_to(self.unfrozen + 1)
 
-    # TODO clean this implementation up as the idea of idx doesn't really make any sense
-    def unfreeze_idx(self, idx: int):
-        layer_mappings = {
-            0: self.model.fc,
-            1: self.model.layer4,
-            2: self.model.layer3,
-            3: self.model.layer2,
-            4: self.model.layer1,
-            5: self.model.conv1,
-        }
+    def unfreeze_to(self, stages: int):
+        """Make the first `stages` ladder entries trainable (idempotent).
 
-        if idx > 5 or (self.permafrost > 0 and idx > self.permafrost):
-            return
-
-        for param in layer_mappings[idx].parameters():  # pyright: ignore [reportAttributeAccessIssue]
-            param.requires_grad = True
-
-        if self.refreeze and idx >= 1 and idx <= 5:
-            for param in layer_mappings[idx - 1].parameters():  # pyright: ignore [reportAttributeAccessIssue]
-                param.requires_grad = False
-
-    def unfreeze_to(self, idx: int):
-        for i in range(idx):
-            self.unfreeze_idx(i)
-        # Keep the unfreeze_next() cursor consistent so a resumed run
-        # continues the ladder instead of replaying it from layer4
-        self.last_frozen = max(self.last_frozen, idx)
+        Capped at ladder_depth + 1 (the embedding layer plus that many residual
+        stages); a depth of 0 means every stage unfreezes.
+        """
+        limit = len(_LADDER) if self.ladder_depth == 0 else self.ladder_depth + 1
+        stages = min(stages, limit, len(_LADDER))
+        for name in _LADDER[:stages]:
+            for param in getattr(self.model, name).parameters():
+                param.requires_grad = True
+        self.unfrozen = max(self.unfrozen, stages)
 
     def forward(self, x):
         if not (self.gradient_checkpointing and self.training):
             return self.model(x)
-        # Checkpoint each ResNet stage so the deep ladder fits at batch 96 on
-        # the 24 GB card: activations are recomputed during backward instead of
-        # held. Note the recompute runs each stage's BatchNorms a second time
-        # per step, so running stats see doubled updates relative to an
-        # uncheckpointed run.
+        # Recompute each stage's activations during backward instead of holding
+        # them, so the deep ladder fits at batch 96 on a 24 GB card. The
+        # recompute runs each stage's BatchNorms a second time per step, so
+        # running statistics see doubled updates.
         m = self.model
         x = m.maxpool(m.relu(m.bn1(m.conv1(x))))
         for layer in (m.layer1, m.layer2, m.layer3, m.layer4):
@@ -93,6 +83,7 @@ class SharedSiamese(nn.Module):
         return m.fc(x)
 
     def init_weights(self, m):
+        """Xavier-initialise the replaced embedding layer."""
         if isinstance(m, nn.Linear):
             torch.nn.init.xavier_uniform_(m.weight)
             m.bias.data.fill_(0.01)

@@ -13,21 +13,21 @@ from tqdm import tqdm
 
 from siamese.config import load_config
 from siamese.datasets import LabeledCombinedDataset
-from siamese.model import SharedSiamese
+from siamese.model import ImpressionEncoder
 from siamese.streaming import IMAGENET_MEAN, IMAGENET_STD, AdaptiveNormalisation
 
 
 @torch.no_grad()
 def validate(
-    shoeprint_model: SharedSiamese,
-    shoemark_model: SharedSiamese,
+    shoeprint_model: ImpressionEncoder,
+    shoemark_model: ImpressionEncoder,
     shoeprint_adaptive_norm: AdaptiveNormalisation,
     shoemark_adaptive_norm: AdaptiveNormalisation,
     *,
     dataset: LabeledCombinedDataset,
     device,
     p: int = 5,
-    p_val: int = 2,
+    distance_norm: int = 2,
     checkpoint: str | Path | None = None,
     failure_dir: Path | str | None = None,
 ):
@@ -91,7 +91,7 @@ def validate(
         dists = torch.cdist(
             class_shoemark_embeddings,
             shoeprint_embeddings,
-            p=p_val,
+            p=distance_norm,
         )
 
         # Get indices of distances sorted small->large
@@ -119,7 +119,7 @@ def validate_all_checkpoints(
     checkpoint_dir: Path | str,
     device: torch.device,
     p: int = 5,
-    p_val: int = 2,
+    distance_norm: int = 2,
     log_name: str = "siamese_test.log",
 ):
     """Validate all checkpoints in a directory.
@@ -136,8 +136,8 @@ def validate_all_checkpoints(
     first = torch.load(checkpoints[0], map_location="cpu")
     embedding_size = first["shoeprint_model_state_dict"]["model.fc.weight"].shape[0]
 
-    shoeprint_model = SharedSiamese(embedding_size=embedding_size).to(device)
-    shoemark_model = SharedSiamese(embedding_size=embedding_size).to(device)
+    shoeprint_model = ImpressionEncoder(embedding_size=embedding_size).to(device)
+    shoemark_model = ImpressionEncoder(embedding_size=embedding_size).to(device)
 
     # Initial statistics are replaced by each checkpoint's saved state
     shoeprint_adaptive_norm = AdaptiveNormalisation(
@@ -159,7 +159,7 @@ def validate_all_checkpoints(
             dataset=dataset,
             device=device,
             p=p,
-            p_val=p_val,
+            distance_norm=distance_norm,
             checkpoint=checkpoint,
         )
         scores[epoch] = cast(float, score)
@@ -170,7 +170,7 @@ def validate_all_checkpoints(
 
 
 # Usage: python src/evaluation.py <checkpoint_dir> [config] [--dataset wvu|test|val]
-# The config is only used for data paths, the GPU number, and p_val — the
+# The config is only used for data paths, the GPU number, and the distance norm — the
 # model architecture is read from the checkpoints, so the run's own config
 # file is not needed.
 if __name__ == "__main__":
@@ -211,6 +211,6 @@ if __name__ == "__main__":
         checkpoint_dir=args.checkpoint_dir,
         device=device,
         p=args.p,
-        p_val=config.hyperparameters.p_val,
+        distance_norm=config.hyperparameters.distance_norm,
         log_name=args.log_name or f"siamese_{args.dataset}.log",
     )
