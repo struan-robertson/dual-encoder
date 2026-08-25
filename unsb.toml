@@ -18,7 +18,6 @@ resume_checkpoint = "" # Leave empty for no resuming
 pre_trained = true
 frozen = true
 unfreeze_cadence = 500 # Number of epochs between layer unfreezes (see gan_pool.toml)
-# TODO try permafrost 5 when I have all my hyperparameters tuned and I train for longer
 ladder_depth = 4 # Number of layers to unfreeze before leaving frozen, 0 to unfreeze all
 
 [curriculum]
@@ -105,7 +104,6 @@ hue = 0.2
 val_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/no_synth/val/"
 test_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/no_synth/test/"
 wvu_data_dir = "~/Vault/University/Doctorate/Data/Siamese/Evaluation/wvu/cropped/"
-fid_data_dir = "~/Development/Doctorate/siamese/data/Testing/FIXME"
 image_size = [512, 256]
 
 [data.streaming]

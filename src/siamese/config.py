@@ -186,7 +186,6 @@ class Data:
     val_dir: Path | None = None
     test_dir: Path | None = None
     wvu_data_dir: Path | None = None
-    fid_data_dir: Path | None = None
     image_size: tuple[int, int] = (512, 256)
 
 

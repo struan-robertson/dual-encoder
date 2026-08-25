@@ -238,7 +238,8 @@ def resume(path: Path) -> int:
     return epoch
 
 
-# TODO start at 1
+# Epochs are numbered from 0, so a run of N epochs logs its last as N-1. Every
+# reported run and checkpoint name follows this, so it stays as it is.
 start_epoch = (
     resume(config.training.resume_checkpoint)
     if config.training.resume_checkpoint

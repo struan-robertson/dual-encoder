@@ -110,7 +110,6 @@ hue = 0.2
 val_dir = "~/Datasets/Siamese/Evaluation/no_synth/val/"
 test_dir = "~/Datasets/Siamese/Evaluation/no_synth/test/"
 wvu_data_dir = "~/Datasets/Siamese/Evaluation/wvu/cropped/"
-fid_data_dir = "~/Development/Doctorate/siamese/data/Testing/FIXME"
 image_size = [512, 256]
 
 [data.streaming]
