@@ -9,10 +9,8 @@ dependencies = [
     "numpy>=2.2.3",
     "pillow>=11.1.0",
     "tqdm>=4.67.1",
-    "one-to-many-gan>=0.1.0",
     "scikit-learn>=1.7.2",
     "pyyaml>=6.0.3",
-    "impression-tools",
 ]
 
 # Pick the build of torch that matches the card. CUDA is the default choice:
@@ -34,7 +32,6 @@ rocm = [
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }]]
 
 [tool.uv.sources]
-one-to-many-gan = { path = "../one_to_many_gan/implementation/", editable = true }
 torch = [
   { index = "pytorch-cuda", extra = "cuda" },
   { index = "pytorch-rocm", extra = "rocm" },
@@ -46,7 +43,6 @@ torchvision = [
 # ROCm relies on both Triton packages, which come from the same index
 pytorch-triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
 triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
-impression-tools = { path = "../impression_tools", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cuda"
