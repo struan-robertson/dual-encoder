@@ -1,7 +1,7 @@
 [project]
 name = "siamese"
 version = "0.1.0"
-description = "Add your description here"
+description = "Dual-encoder retrieval of reference shoeprints from crime scene shoemarks"
 readme = { file = "README.org", content-type = "text/plain" }
 requires-python = ">=3.13"
 dependencies = [
