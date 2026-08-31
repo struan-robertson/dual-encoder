@@ -2,7 +2,7 @@
 name = "siamese"
 version = "0.1.0"
 description = "Add your description here"
-readme = "README.org"
+readme = { file = "README.org", content-type = "text/plain" }
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.10.1",
@@ -30,6 +30,10 @@ rocm = [
 
 [tool.uv]
 conflicts = [[{ extra = "cuda" }, { extra = "rocm" }]]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.uv.sources]
 torch = [
