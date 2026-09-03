@@ -57,3 +57,8 @@ proportion of query shoemarks whose correct shoeprint ranks within the top p
 percent of the gallery. =failure_analysis.py= collects the queries that fall
 outside that threshold, writing each with its correct and incorrectly matched
 shoeprints for inspection.
+
+* Licence
+
+Distributed under the GNU General Public License, version 3 or later. The full
+text is in =LICENSE=.
